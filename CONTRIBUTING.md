@@ -28,8 +28,7 @@ built.
 
 ## Local checks
 
-Run these before you push. CI runs these and additionally runs a vulnerability
-scan and a no-third-party-dependency check.
+Run these before you push:
 
 ```sh
 gofmt -l .        # must print nothing
@@ -37,6 +36,11 @@ go vet ./...
 go test ./...
 go build ./cmd/qiyan
 ```
+
+CI runs equivalents of all four and then goes further: it builds with
+`-trimpath`, runs the built binary as a smoke test, scans for known
+vulnerabilities with a pinned `govulncheck`, verifies the module cache with
+`go mod verify`, and fails if the module acquires any third-party dependency.
 
 ## Commit messages
 

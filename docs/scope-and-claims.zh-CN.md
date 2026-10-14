@@ -13,7 +13,7 @@
 | 未知命令 | 向 stderr 打印错误、打印用法，退出码 2 |
 | 构建 | 仅依赖标准库的 Go 模块，`go build ./cmd/qiyan` |
 | 测试 | 覆盖命令行行为的单元测试，`go test ./...` |
-| CI | 在 Linux、Windows、macOS 上执行 build、vet、gofmt 与 test |
+| CI | 在 Linux、Windows、macOS 上执行 build、vet、gofmt 与 test；另有一个独立任务进行漏洞扫描并拒绝第三方依赖 |
 | 发布演练 | 按需生成带构建来源证明的测试产物 |
 
 以上就是全部。不存在其他行为。

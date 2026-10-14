@@ -1,6 +1,6 @@
 # qiyan — Evidence-Backed AI Agent Action Surface & Blast Radius Map
 
-> **Early engineering scaffold — nothing here works yet.**
+> **Early engineering scaffold — no product capability works yet.**
 >
 > This repository is at its first step. It holds a Go module, a command-line
 > entry point that implements only `help` and `version`, and the CI, security and

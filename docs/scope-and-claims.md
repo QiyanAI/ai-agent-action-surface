@@ -14,7 +14,7 @@ is wrong and this document is the specification.
 | Unknown command | Prints an error to stderr, prints usage, exits 2 |
 | Build | Standard-library-only Go module, `go build ./cmd/qiyan` |
 | Tests | Unit tests over the CLI's behaviour, `go test ./...` |
-| CI | Go build, vet, gofmt and test on Linux, Windows and macOS |
+| CI | Go build, vet, gofmt and test on Linux, Windows and macOS; a separate job scans for known vulnerabilities and rejects third-party dependencies |
 | Release drill | A build-provenance-attested test artifact, produced on demand |
 
 That is the complete list. There is no other behaviour.
