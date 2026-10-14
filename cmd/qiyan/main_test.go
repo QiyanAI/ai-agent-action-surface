@@ -68,3 +68,32 @@ func TestUnknownCommandFailsWithExitCode2(t *testing.T) {
 		t.Errorf("stdout = %q, want empty on error", stdout)
 	}
 }
+
+// The help text is the CLI's only contract today, so it must actually name the
+// verbs that exist. Without this, a verb could be implemented and remain
+// undiscoverable.
+func TestHelpNamesEveryImplementedVerb(t *testing.T) {
+	stdout, _, code := invoke("help")
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	for _, verb := range []string{"help", "version"} {
+		if !strings.Contains(stdout, verb) {
+			t.Errorf("help output does not name the %q verb:\n%s", verb, stdout)
+		}
+	}
+}
+
+// Bare invocation and `help` are the same entry point from a user's point of
+// view; if they ever diverge, one of them is wrong.
+func TestBareInvocationMatchesHelp(t *testing.T) {
+	bareOut, _, bareCode := invoke()
+	helpOut, _, helpCode := invoke("help")
+
+	if bareCode != helpCode {
+		t.Fatalf("exit codes differ: bare = %d, help = %d", bareCode, helpCode)
+	}
+	if bareOut != helpOut {
+		t.Errorf("bare invocation and `help` disagree:\nbare: %q\nhelp: %q", bareOut, helpOut)
+	}
+}
