@@ -52,8 +52,9 @@ Treat them accordingly:
 - **Standard library only.** The module has no third-party dependencies. Do not
   add one without the maintainer's explicit agreement.
 - **Honest claims.** Never describe a capability that is not implemented. Keep
-  `README.md`, `README.zh-CN.md` and `docs/scope-and-claims.md` consistent with
-  the code. A green test suite is not evidence that a product works.
+  `README.md`, `README.zh-CN.md`, `docs/scope-and-claims.md` and
+  `docs/scope-and-claims.zh-CN.md` consistent with the code. A green test suite
+  is not evidence that a product works.
 - **No self-referential hashes.** No tracked file may contain the SHA of the
   commit that contains it. Build identity is injected at build time, never
   written back into the tree.

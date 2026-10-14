@@ -16,7 +16,7 @@ import (
 const programName = "qiyan"
 
 // Build identity. These defaults describe an untagged local `go build`.
-// Release and drill builds overwrite them with
+// The release drill overwrites them with
 //
 //	-ldflags "-X main.version=... -X main.commit=... -X main.built=..."
 //

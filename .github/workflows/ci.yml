@@ -1,9 +1,9 @@
 name: CI
 
-# Pull-request and main-branch checks only. This workflow holds read-only
-# permissions by design: nothing here may write to the repository, publish a
-# release, or reach a production credential. Release capability lives solely in
-# release-drill.yml, which is dispatch-only.
+# Pull requests, pushes to main and manual dispatches only. This workflow holds
+# read-only permissions by design: nothing here may write to the repository,
+# publish a release, or reach a production credential. Release capability lives
+# solely in release-drill.yml, which is dispatch-only.
 on:
   push:
     branches: [main]
