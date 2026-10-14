@@ -22,7 +22,11 @@ jobs:
   build-and-test:
     name: build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Deliberately generous. Each leg takes well under a minute once it starts,
+    # but the macOS leg has been cancelled at exactly 15 minutes with no runner
+    # ever assigned, twice in a row. A required check must not fail for want of a
+    # runner; a 45-minute bound still catches a genuinely hung job.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +80,7 @@ jobs:
   security:
     name: security checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
