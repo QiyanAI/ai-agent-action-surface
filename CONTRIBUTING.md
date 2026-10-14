@@ -28,7 +28,8 @@ built.
 
 ## Local checks
 
-Run these before you push. They are the same checks CI runs.
+Run these before you push. CI runs these and additionally runs a vulnerability
+scan and a no-third-party-dependency check.
 
 ```sh
 gofmt -l .        # must print nothing

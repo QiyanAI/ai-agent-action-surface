@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Temporary drill tag, deleted again after the drill completes
+        description: Temporary drill tag. This workflow does not clean up; delete the draft release after the drill
         required: true
         default: v0.0.0-r01-drill
 
