@@ -1,0 +1,15 @@
+# Compiled binaries. `go build` without -o writes into the working directory.
+/qiyan
+/qiyan.exe
+/dist/
+
+# Go test and coverage output
+*.test
+*.out
+coverage.txt
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

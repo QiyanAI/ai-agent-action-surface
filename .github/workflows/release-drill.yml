@@ -1,0 +1,146 @@
+name: Release Drill
+
+# The R01 release drill. It builds a clearly-labelled set of test artifacts,
+# records their SHA-256 identity, signs them with a GitHub build-provenance
+# attestation, and opens a DRAFT release holding them.
+#
+# This is a drill, not a product release. The release it opens is a draft and is
+# additionally flagged prerelease, so it is invisible to the public and cannot
+# be mistaken for a shipped version.
+#
+# It is dispatch-only and never triggers on pull_request, so code proposed by a
+# contributor can never reach the write-capable job below.
+#
+# Permissions are split from ci.yml on purpose: ci.yml is read-only, and the
+# write, OIDC and attestation grants exist only here and only for this drill.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Temporary drill tag, deleted again after the drill completes
+        required: true
+        default: v0.0.0-r01-drill
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-attest:
+    name: build and attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read # read the source tree
+      id-token: write # OIDC token, required to sign the attestation
+      attestations: write # write the build-provenance record
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The binary is bound to the exact commit it was built from: the SHA is
+      # injected at build time and is never written back into the source tree.
+      - name: Build drill artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          commit="${GITHUB_SHA}"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "commit    : ${commit}"
+          echo "built     : ${built}"
+          echo "go        : $(go version)"
+          echo "runner    : $(uname -s -m)"
+
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%%/*}"
+            arch="${target##*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            out="dist/qiyan_0.0.0-r01_${os}_${arch}${ext}"
+
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-X main.version=0.0.0-r01 -X main.commit=${commit} -X main.built=${built}" \
+              -o "$out" ./cmd/qiyan
+
+            echo "built ${out}"
+          done
+
+      - name: Record artifact identity
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum qiyan_* | tee SHA256SUMS
+          echo
+          echo "artifacts:"
+          ls -l qiyan_*
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: dist/qiyan_*
+
+      - name: Upload drill artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: r01-drill-artifacts
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 5
+
+  create-draft-release:
+    name: create draft release (drill)
+    needs: build-and-attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only this job needs to write, and only a draft. It re-verifies the
+    # checksums before attaching anything.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download drill artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: r01-drill-artifacts
+          path: release-assets
+
+      - name: Verify SHA-256 before attaching
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum --check SHA256SUMS
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "R01 release drill - NOT a product release" \
+            --notes "Release-pipeline drill for the R01 engineering foundation.
+
+          These artifacts are test builds produced by the Release Drill workflow.
+          They are not a product release, they implement no scanning or analysis
+          capability, and they carry no support or compatibility promise.
+
+          Each artifact is accompanied by a SHA-256 checksum and a GitHub
+          build-provenance attestation. The checksum is an integrity value, not a
+          signature; the attestation records how the artifact was built and is not
+          a legally binding or enterprise signature. See docs/scope-and-claims.md." \
+            release-assets/*

@@ -1,0 +1,116 @@
+name: CI
+
+# Pull-request and main-branch checks only. This workflow holds read-only
+# permissions by design: nothing here may write to the repository, publish a
+# release, or reach a production credential. Release capability lives solely in
+# release-drill.yml, which is dispatch-only.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Verify formatting
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt reported unformatted files:"
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+          echo "gofmt: clean"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -count=1 ./...
+
+      - name: Build the CLI
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -o dist/qiyan ./cmd/qiyan
+          ls -l dist
+
+      # A green compile is not evidence that the artifact works. Run it.
+      - name: Run the built binary
+        run: |
+          set -euo pipefail
+          if [ -f dist/qiyan.exe ]; then bin=dist/qiyan.exe; else bin=dist/qiyan; fi
+          "$bin" version
+          "$bin" help > /dev/null
+          echo "binary runs: ok"
+
+  security:
+    name: security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Known-vulnerability scan over the module and the Go standard library it
+      # is compiled against. Pinned to an exact tool version so the check is
+      # reproducible rather than "latest at the time it ran".
+      - name: Vulnerability scan (govulncheck)
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck_bin="$(go env GOPATH)/bin/govulncheck"
+          "$govulncheck_bin" -version
+          "$govulncheck_bin" ./...
+
+      # Secret scanning and push protection are provided by GitHub itself for
+      # public repositories and are configured as repository settings, not as a
+      # step here. See SECURITY.md.
+      - name: Confirm the module has no third-party dependencies
+        run: |
+          set -euo pipefail
+          go mod verify
+          if [ -s go.sum ]; then
+            echo "go.sum is non-empty; third-party dependencies have been introduced:"
+            cat go.sum
+            exit 1
+          fi
+          echo "module is standard-library only: ok"

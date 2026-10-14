@@ -1,0 +1,13 @@
+# Store every text file in the repository with LF endings, so a Windows
+# checkout cannot reintroduce CRLF into source, docs or workflow files.
+* text=auto eol=lf
+
+*.go    text eol=lf
+*.mod   text eol=lf
+*.sum   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+LICENSE text eol=lf
