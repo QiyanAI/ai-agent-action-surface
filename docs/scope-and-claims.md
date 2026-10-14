@@ -48,8 +48,9 @@ than writing to stdout and stderr.
 
 ## Supply-chain statements, stated precisely
 
-- **SHA-256 digests** in CI and in the release drill are integrity checksums.
-  They are **not** a digital signature and provide no authenticity on their own.
+- **SHA-256 digests** in the release drill are integrity checksums. They are
+  **not** a digital signature and provide no authenticity on their own. CI
+  itself produces no digests; it does not publish an artifact to digest.
 - **GitHub artifact attestations** are a build-provenance record, signed by the
   GitHub Actions identity of the workflow run. They are **not** an enterprise or
   legally binding signature, and they attest to how an artifact was built, not
