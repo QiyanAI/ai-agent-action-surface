@@ -3,10 +3,11 @@
 **Status: IMPLEMENTATION COMPLETE — VERIFIED (with two explicitly NOT
 VALIDATED experience gates; see §9). Final acceptance belongs to the user.**
 
-**Verified code state:** `b4876cf0babed4d9e596b1e78f15a14259e14069` on
-`r02/mission-control` (tree `6ad5ad2756…`, byte-identical to the locally
-tested tree — verified by tree-hash comparison after landing). This report is
-added in a report-only commit on top of that state; no code changed.
+**Verified code state:** `b4876cf0babed4d9e596b1e78f15a14259e14069`; amended by
+the R02-SEC-01 fix at `0d894507175fcf97f8b416baa490801525650f22` (both on
+`r02/mission-control`; tree hashes byte-identical to the locally tested trees —
+verified by tree-hash comparison after landing). This report is added in a
+report-only commit on top of that state; no code changed by this commit.
 
 **Baseline:** `main` @ `e6d2842042370cd268d81581a751125125c7887c`, exactly the
 SHA the R02 V2.0 task book names. R01 was neither reopened nor modified.
@@ -167,6 +168,47 @@ No gate is claimed beyond its evidence. No capability is marked VERIFIED
 without a real run. Nothing is BLOCKED at the capability level (the
 intermittent github.com transport was worked around with verified-identical
 objects; it is an environmental note, not a capability block).
+
+## 9a. R02-SEC-01 addendum — command auto-allow boundary (independent acceptance finding)
+
+An independent acceptance pass found that the auto-allow table admitted
+commands with side effects it could not rule out. Fixed in commit `0d8945…`;
+the fix is strictly a classification-boundary change.
+
+**Audit of same-class side-effect paths in the auto-allow table** (each one
+either demoted or screened; nothing else touched):
+
+| Form | Why it was wrongly auto-allowed | Now |
+| --- | --- | --- |
+| `go test` | runs the project's own test binaries (arbitrary project code) | approval (sensitive) |
+| `go env`, `go env -w`, `go env -u` | `-w`/`-u` persist configuration | approval (sensitive) |
+| `go vet -vettool=…` | runs an external analysis binary | demoted by the flag screen |
+| `date`, `date -s …` | GNU `-s` and BSD positional forms set the system clock | approval (unrecognized) |
+| `hostname NAME` | positional form sets the host name | approval (unrecognized) |
+| `git log/diff/show/blame` | textconv filters, `diff.external` and `GIT_EXTERNAL_DIFF` can make them execute configured helper programs | approval (sensitive) |
+| kept as safe | proven side-effect-free forms | `go build/vet/list/version`, `git status/rev-parse/ls-files/describe/shortlog`, print-only tools (ls, cat, grep, …) |
+
+**Negative evidence (live, through the real hook channel):** the acceptance
+script drove the actual `/v1/hook/decide` endpoint used by Claude Code with a
+bound session — 12 side-effecting forms (`go test ./...`, `go test`,
+`go env -w GOFLAGS=-mod=mod`, `go env -u GOPATH`, `go env`,
+`go vet -vettool=/tmp/tool ./...`, `date -s 12:00`, `hostname newname`,
+`git log`, `git diff`, `git show HEAD`, `git blame main.go`) **all returned
+REQUIRE_APPROVAL, each with a real pending approval recorded**; 9 positively
+verified read-only forms (`go build ./...`, `go vet ./...`, `go list ./...`,
+`go version`, `git status`, `git rev-parse HEAD`, `git shortlog -sn`,
+`ls -la`, `uname -a`) still ran with no friction. Regression tests
+(`internal/control/engine_test.go`) assert both directions and run on the
+three-OS CI.
+
+**Docs updated for consistency:** `docs/scope-and-claims.md` /
+`.zh-CN.md` now state the proven-side-effect-free rule and name the demoted
+forms; the `developer-api` examples no longer use a now-gated command.
+
+**Unchanged true gaps:** U02 (human 60-second timing) and U13 (independent
+first-time users) remain **NOT VALIDATED** — the fix changes no UX claim and
+no architecture. This addendum affects only the command classification
+boundary described above.
 
 ## 10. Re-running the evidence
 
