@@ -56,7 +56,7 @@ func TestVersionFormsReportBuildIdentity(t *testing.T) {
 }
 
 func TestUnknownCommandFailsWithExitCode2(t *testing.T) {
-	stdout, stderr, code := invoke("scan")
+	stdout, stderr, code := invoke("definitely-not-a-command")
 
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -77,7 +77,7 @@ func TestHelpNamesEveryImplementedVerb(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, verb := range []string{"help", "version"} {
+	for _, verb := range []string{"help", "version", "serve", "hook", "status", "agents", "approvals", "approve", "deny", "mission"} {
 		if !strings.Contains(stdout, verb) {
 			t.Errorf("help output does not name the %q verb:\n%s", verb, stdout)
 		}

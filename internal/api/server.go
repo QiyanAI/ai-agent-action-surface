@@ -269,7 +269,7 @@ func (s *Server) handleAgentCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The token is shown exactly once; only its hash is stored.
-	writeJSON(w, http.StatusCreated, map[string]any{"agent": ag, "token": token})
+	writeJSON(w, http.StatusCreated, map[string]any{"agent": agentPayload(ag), "token": token})
 }
 
 func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +281,11 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+	out := make([]AgentPayload, 0, len(agents))
+	for _, a := range agents {
+		out = append(out, agentPayload(a))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"agents": out})
 }
 
 type scopeReq struct {
@@ -328,7 +332,7 @@ func (s *Server) handleMissionCreate(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, m)
+	writeJSON(w, http.StatusCreated, missionPayload(m))
 }
 
 func (s *Server) handleMissionList(w http.ResponseWriter, r *http.Request) {
@@ -340,7 +344,11 @@ func (s *Server) handleMissionList(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"missions": missions})
+	out := make([]MissionPayload, 0, len(missions))
+	for _, m := range missions {
+		out = append(out, missionPayload(m))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"missions": out})
 }
 
 func (s *Server) handleMissionGet(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +385,11 @@ func (s *Server) handleMissionGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mission": m, "tasks": tasks})
+	tp := make([]TaskPayload, 0, len(tasks))
+	for _, t := range tasks {
+		tp = append(tp, taskPayload(t))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mission": missionPayload(m), "tasks": tp})
 }
 
 type taskCreateReq struct {
@@ -414,7 +426,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, t)
+	writeJSON(w, http.StatusCreated, taskPayload(t))
 }
 
 func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
@@ -435,7 +447,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, domain.ErrIdentityConflict, "not this agent's task")
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	writeJSON(w, http.StatusOK, taskPayload(t))
 }
 
 func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +481,7 @@ func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
 			_ = s.Engine.CancelApproval(ap.ID, domain.Actor{Source: domain.SourceLocalUser, Label: "operator"}, time.Now())
 		}
 	}
-	writeJSON(w, http.StatusOK, t)
+	writeJSON(w, http.StatusOK, taskPayload(t))
 }
 
 type sessionBindReq struct {
@@ -622,7 +634,11 @@ func (s *Server) handleApprovalList(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"approvals": list})
+	out := make([]ApprovalPayload, 0, len(list))
+	for _, a := range list {
+		out = append(out, approvalPayload(a))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"approvals": out})
 }
 
 func (s *Server) handleApprovalGet(w http.ResponseWriter, r *http.Request) {
@@ -643,7 +659,7 @@ func (s *Server) handleApprovalGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, domain.ErrIdentityConflict, "not this agent's approval")
 		return
 	}
-	writeJSON(w, http.StatusOK, ap)
+	writeJSON(w, http.StatusOK, approvalPayload(ap))
 }
 
 type approvalDecisionReq struct {
@@ -671,7 +687,7 @@ func (s *Server) handleApprovalDecision(w http.ResponseWriter, r *http.Request) 
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ap)
+	writeJSON(w, http.StatusOK, approvalPayload(ap))
 }
 
 type resultEventReq struct {
@@ -730,7 +746,11 @@ func (s *Server) handleDecisions(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"decisions": recs})
+	out := make([]DecisionRecordPayload, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, decisionRecordPayload(rec))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"decisions": out})
 }
 
 func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {
@@ -742,7 +762,11 @@ func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"coverage": rows})
+	out := make([]CoveragePayload, 0, len(rows))
+	for _, c := range rows {
+		out = append(out, coveragePayload(c))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"coverage": out})
 }
 
 type uiSessionReq struct {
