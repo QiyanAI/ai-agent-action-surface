@@ -112,7 +112,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	}
 
 	engine := control.New(st)
-	srv := api.NewServer(st, engine, version, operatorToken, hookToken)
+	srv := api.NewServer(st, engine, version, operatorToken, hookToken, *dir)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

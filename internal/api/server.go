@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QiyanAI/ai-agent-action-surface/internal/connector"
 	"github.com/QiyanAI/ai-agent-action-surface/internal/control"
 	"github.com/QiyanAI/ai-agent-action-surface/internal/domain"
+	"github.com/QiyanAI/ai-agent-action-surface/internal/mission"
 	"github.com/QiyanAI/ai-agent-action-surface/internal/store"
 )
 
@@ -36,16 +39,35 @@ type Server struct {
 	OperatorToken string
 	HookToken     string
 
+	// StateDir is where the installed integration points its hook. The
+	// server owns it so connect plans always name the same directory the
+	// running service writes to.
+	StateDir string
+
+	// probe runs the real enforcement verification; overridable in tests.
+	probe ProbeFunc
+
+	// runs tracks live and finished mission runs (three-role fleet).
+	runs *mission.RunRegistry
+
 	sessions *sessionStore
 	started  time.Time
 	mux      *http.ServeMux
 }
 
-// NewServer wires a server around a store and engine.
-func NewServer(st *store.Store, engine *control.Engine, version, operatorToken, hookToken string) *Server {
+// ProbeFunc matches connector.ProbeReal; tests substitute a stub because a
+// real probe launches live runtime sessions.
+type ProbeFunc func(ctx context.Context, claudeBinary, qiyanBinary, workRoot string) (connector.ProbeResult, error)
+
+// NewServer wires a server around a store and engine. stateDir names the
+// directory installed hooks point at (the directory the store already uses).
+func NewServer(st *store.Store, engine *control.Engine, version, operatorToken, hookToken, stateDir string) *Server {
 	s := &Server{
 		Store: st, Engine: engine, Version: version,
 		OperatorToken: operatorToken, HookToken: hookToken,
+		StateDir: stateDir,
+		probe:    connector.ProbeReal,
+		runs:     mission.NewRunRegistry(),
 		sessions: newSessionStore(),
 		started:  time.Now(),
 		mux:      http.NewServeMux(),
@@ -53,6 +75,9 @@ func NewServer(st *store.Store, engine *control.Engine, version, operatorToken, 
 	s.routes()
 	return s
 }
+
+// SetProbe replaces the probe implementation (tests only).
+func (s *Server) SetProbe(p ProbeFunc) { s.probe = p }
 
 // Handler returns the fully wrapped HTTP handler.
 func (s *Server) Handler() http.Handler {
@@ -89,6 +114,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/events", s.handleResultEvent)
 	s.mux.HandleFunc("GET /v1/decisions", s.handleDecisions)
 	s.mux.HandleFunc("GET /v1/coverage", s.handleCoverage)
+
+	// Mission runs (three-role fleet).
+	s.mux.HandleFunc("POST /v1/missions/{id}/run", s.handleMissionRun)
+	s.mux.HandleFunc("GET /v1/missions/{id}/run", s.handleMissionRunStatus)
+	s.mux.HandleFunc("POST /v1/missions/{id}/run/cancel", s.handleMissionRunCancel)
+
+	// Claude Code integration (connect wizard).
+	s.mux.HandleFunc("POST /v1/connect/preview", s.handleConnectPreview)
+	s.mux.HandleFunc("POST /v1/connect/apply", s.handleConnectApply)
+	s.mux.HandleFunc("GET /v1/connect", s.handleConnectList)
+	s.mux.HandleFunc("DELETE /v1/connect", s.handleConnectRemove)
 
 	// UI session bootstrap (browser flows; the full console arrives with the
 	// Mission Control UI, but the session mechanics live here).
@@ -568,7 +604,9 @@ func (s *Server) handleHookDecide(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, domain.ErrUnrecognizedAction, "%v", err)
 		return
 	}
-	dec, err := s.evaluate(b, action)
+	// The hook path is the one place a deny is machine-enforced (verified in
+	// R02-00: exit 2 stops the call), so its decisions are stamped ENFORCED.
+	dec, err := s.evaluate(b, action, domain.CoverageEnforced)
 	if err != nil {
 		fail(w, err)
 		return
@@ -598,7 +636,11 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		TaskID:    domain.TaskID(req.TaskID),
 		AgentID:   info.Agent.ID,
 	}
-	dec, err := s.evaluate(b, req.Action.ToAction())
+	// A host asking before it acts is observed, not enforced: Qiyan decides,
+	// but compliance is the host's code. Claiming ENFORCED here would be the
+	// false "protected" label the book forbids (S10); the coverage registry
+	// records what a specific, tested integration actually guarantees.
+	dec, err := s.evaluate(b, req.Action.ToAction(), domain.CoverageObserved)
 	if err != nil {
 		fail(w, err)
 		return
@@ -609,7 +651,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 // evaluate assembles the engine request from a binding + action. The binding
 // supplies identity (mission, task, agent from the store) — the caller's
 // request body never does.
-func (s *Server) evaluate(b store.SessionBinding, action domain.Action) (domain.Decision, error) {
+func (s *Server) evaluate(b store.SessionBinding, action domain.Action, coverage domain.CoverageState) (domain.Decision, error) {
 	task, found, err := s.Store.GetTask(b.TaskID)
 	if err != nil {
 		return domain.Decision{}, err
@@ -637,7 +679,7 @@ func (s *Server) evaluate(b store.SessionBinding, action domain.Action) (domain.
 	}
 	return s.Engine.Evaluate(control.Request{
 		Mission: m, Task: task, Agent: agent, Action: action,
-		Agents: roster, Now: time.Now(),
+		Agents: roster, Coverage: coverage, Now: time.Now(),
 	})
 }
 

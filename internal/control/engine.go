@@ -31,7 +31,10 @@ func (e *Engine) now(req Request) time.Time {
 	if !req.Now.IsZero() {
 		return req.Now
 	}
-	return e.Clock()
+	if e.Clock != nil {
+		return e.Clock()
+	}
+	return time.Now()
 }
 
 // Request is one decision request. Mission, Task and Agent are the requester
@@ -43,8 +46,16 @@ type Request struct {
 	Action  domain.Action
 
 	// Agents is the mission roster (the fleet plus any registered external
-	// agents). Delegation targets are validated against it.
+	// agents). The requester must be on it, and delegation targets are
+	// validated against it.
 	Agents []domain.Agent
+
+	// Coverage is how far the calling path can actually enforce this
+	// decision, declared by the transport layer that knows: the hook path is
+	// CoverageEnforced (a block really stops the call), a third-party host
+	// asking before it acts is CoverageObserved (we decide, the host must
+	// obey). The engine never upgrades this on its own; empty means UNKNOWN.
+	Coverage domain.CoverageState
 
 	Now time.Time
 }
@@ -60,13 +71,17 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 	now := e.now(req)
 	scope := req.Mission.Policy.Scope
 
+	coverage := req.Coverage
+	if coverage == "" {
+		coverage = domain.CoverageUnknown
+	}
 	d := domain.Decision{
 		ActionDigest: req.Action.CanonicalDigest(),
 		MissionID:    req.Mission.ID,
 		TaskID:       req.Task.ID,
 		AgentID:      req.Agent.ID,
 		Mode:         req.Mission.Policy.Mode,
-		Coverage:     domain.CoverageEnforced,
+		Coverage:     coverage,
 		DecidedAt:    now,
 	}
 
@@ -102,12 +117,17 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 		return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonIdentityUnknown,
 			"task_agent", string(req.Task.AgentID), "requester", string(req.Agent.ID)))
 	}
-	if len(req.Agents) > 0 && !rosterContains(req.Agents, req.Agent.ID) {
+	if !rosterContains(req.Agents, req.Agent.ID) {
+		// No roster, or the requester is not on it: identity is not
+		// established, and an absent roster must not silently remove the
+		// check.
 		return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonIdentityUnknown,
 			"requester", string(req.Agent.ID), "reason", "not_in_mission_roster"))
 	}
 
 	if req.Task.StepsUsed >= scope.MaxSteps {
+		// Fast-path refusal from the snapshot; the authoritative, atomic
+		// check-and-consume happens at the commit point below.
 		return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonBudgetExhausted,
 			"budget", "steps", "used", strconv.Itoa(req.Task.StepsUsed), "limit", strconv.Itoa(scope.MaxSteps)))
 	}
@@ -119,7 +139,10 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 	if !domain.KnownActionKind(a.Kind) {
 		return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonUnrecognizedCommand, "kind", string(a.Kind)))
 	}
-	if req.Agent.ReadOnly && a.Kind.Mutation() && a.Kind != domain.ActionDelegation {
+	// Read-only is derived from either the agent record or its role default;
+	// a record claiming to be writable cannot widen a read-only role.
+	readOnly := req.Agent.ReadOnly || req.Agent.Role.DefaultReadOnly()
+	if readOnly && a.Kind.Mutation() && a.Kind != domain.ActionDelegation {
 		return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonWriteByReadOnly,
 			"role", string(req.Agent.Role), "kind", string(a.Kind)))
 	}
@@ -154,8 +177,9 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 		if cerr := auth.Check(now, a, req.Mission.ID, req.Task.ID, req.Agent.ID, scope); cerr != nil {
 			return finish(domain.FailClosedOutcome(cerr), reasonsOf(cerr)...)
 		}
-		if err := e.Store.IncrementSteps(req.Task.ID); err != nil {
-			return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonControlUnavailable, "stage", "budget"))
+		if err := e.consumeStep(req, scope); err != nil {
+			reasons := reasonsOf(err)
+			return finish(domain.FailClosedOutcome(err), reasons...)
 		}
 		return finish(domain.OutcomeAllow,
 			domain.NewReason(domain.ReasonUserApproved, "approval", string(auth.ID)))
@@ -169,8 +193,9 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 	outcome, reasons := e.gate(req, scope)
 	switch outcome {
 	case domain.OutcomeAllow:
-		if err := e.Store.IncrementSteps(req.Task.ID); err != nil {
-			return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonControlUnavailable, "stage", "budget"))
+		if err := e.consumeStep(req, scope); err != nil {
+			reasons := reasonsOf(err)
+			return finish(domain.FailClosedOutcome(err), reasons...)
 		}
 		return finish(domain.OutcomeAllow, reasons...)
 
@@ -180,6 +205,18 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 	default:
 		return finish(domain.OutcomeDeny, reasons...)
 	}
+}
+
+// consumeStep performs the atomic check-and-consume of one budget step. A
+// full budget denies; a store failure denies (fail-closed).
+func (e *Engine) consumeStep(req Request, scope domain.Scope) error {
+	if err := e.Store.ConsumeStep(req.Task.ID, scope.MaxSteps); err != nil {
+		if domain.ClassOf(err) == domain.ErrBudgetExhausted {
+			return err
+		}
+		return domain.NewError(domain.ErrControlUnavailable, "step budget could not be consumed: %v", err)
+	}
+	return nil
 }
 
 // gate applies the mode-and-kind policy to a structurally valid request.
@@ -204,14 +241,31 @@ func (e *Engine) gate(req Request, scope domain.Scope) (domain.Outcome, []domain
 
 	case domain.ActionProcessExec:
 		class, program := ClassifyCommand(a.Command, a.Cwd)
-		switch class {
-		case CmdSafe:
-			return domain.OutcomeAllow, nil
-		case CmdSensitive:
-			return domain.OutcomeRequireApproval, CommandReasons(class, program)
-		default:
-			return domain.OutcomeRequireApproval, CommandReasons(class, program)
+		if class == CmdSafe {
+			// Program-level safety is not enough: the arguments must not
+			// reach outside the authorized roots ("cat C:/elsewhere/secret"),
+			// or containment would exist for file tools and evaporate for
+			// shell ones. Unresolvable path arguments stay behind approval.
+			if outside, unverifiable := AnalyzeSafeCommandPaths(a.Command, a.Cwd, scope.Roots); outside != "" {
+				return domain.OutcomeDeny, []domain.Reason{
+					domain.NewReason(domain.ReasonPathOutsideScope, "path", outside, "program", program)}
+			} else if unverifiable {
+				return domain.OutcomeRequireApproval, []domain.Reason{
+					domain.NewReason(domain.ReasonUnrecognizedCommand, "program", program)}
+			}
 		}
+		if class == CmdSafe && mode == domain.ModeCompanion {
+			// Companion mode: running any program waits for the user, even a
+			// curated read-only one. This is a concrete policy condition that
+			// distinguishes the modes; a more autonomous mode never weakens a
+			// gate, it only skips this ask.
+			return domain.OutcomeRequireApproval, []domain.Reason{
+				domain.NewReason(domain.ReasonModeCompanion, "kind", string(a.Kind), "program", program)}
+		}
+		if class == CmdSafe {
+			return domain.OutcomeAllow, nil
+		}
+		return domain.OutcomeRequireApproval, CommandReasons(class, program)
 
 	case domain.ActionNetwork:
 		return domain.OutcomeRequireApproval, []domain.Reason{domain.NewReason(domain.ReasonExternalNetwork, "target", a.URL)}
@@ -226,8 +280,15 @@ func (e *Engine) gate(req Request, scope domain.Scope) (domain.Outcome, []domain
 		return e.gateDelegation(req, scope)
 
 	case domain.ActionSessionLocal:
-		// Session bookkeeping: allowed and recorded, but never presented as a
-		// vetted action.
+		// Session bookkeeping is allowed only for tools that are actually
+		// known bookkeeping: the kind is transport-declared, so it must never
+		// be a label any caller can stick on an arbitrary action to skip the
+		// gate (a third-party host controls its payload's kind field).
+		caps, known := domain.CapabilitiesForTool(a.Tool)
+		if !known || len(caps) != 1 || caps[0] != domain.CapInternalState {
+			return domain.OutcomeRequireApproval, []domain.Reason{
+				domain.NewReason(domain.ReasonUnrecognizedCommand, "tool", a.Tool, "kind", string(a.Kind))}
+		}
 		return domain.OutcomeAllow, []domain.Reason{domain.NewReason(domain.ReasonNoExternalEffect, "tool", a.Tool)}
 
 	default: // ActionUnknown and anything unforeseen: the user decides, explicitly.
@@ -358,15 +419,22 @@ func (e *Engine) Decide(approvalID domain.ApprovalID, approve bool, by domain.Ac
 			"approval %s is %s and can no longer be decided", approvalID, ap.State)
 	}
 
-	t := now
-	ap.DecidedAt = &t
-	ap.DecidedBy = by
-
+	// The pending -> decided transition is a compare-and-swap: exactly one
+	// racer wins, so one approval can never mint two grants or undo a
+	// concurrent denial.
+	target := domain.ApprovalDenied
+	if approve {
+		target = domain.ApprovalApproved
+	}
+	ap, won, err := e.Store.TransitionApproval(approvalID, domain.ApprovalPending, target, now, by)
+	if err != nil {
+		return domain.ApprovalRequest{}, err
+	}
+	if !won {
+		return domain.ApprovalRequest{}, domain.NewError(domain.ErrConflict,
+			"approval %s was already decided or cancelled", approvalID)
+	}
 	if !approve {
-		ap.State = domain.ApprovalDenied
-		if err := e.Store.UpdateApproval(ap); err != nil {
-			return domain.ApprovalRequest{}, domain.NewError(domain.ErrStoreCorrupted, "approval update failed: %v", err)
-		}
 		return ap, nil
 	}
 
@@ -384,7 +452,6 @@ func (e *Engine) Decide(approvalID domain.ApprovalID, approve bool, by domain.Ac
 	if err := e.Store.CreateAuthorization(auth); err != nil {
 		return domain.ApprovalRequest{}, domain.NewError(domain.ErrStoreCorrupted, "authorization could not be stored: %v", err)
 	}
-	ap.State = domain.ApprovalApproved
 	ap.Authorization = &auth
 	if err := e.Store.UpdateApproval(ap); err != nil {
 		return domain.ApprovalRequest{}, domain.NewError(domain.ErrStoreCorrupted, "approval update failed: %v", err)
@@ -406,13 +473,11 @@ func (e *Engine) CancelApproval(approvalID domain.ApprovalID, by domain.Actor, n
 	if ap.State != domain.ApprovalPending {
 		return nil // already decided; nothing to cancel
 	}
-	ap.State = domain.ApprovalCancelled
-	ap.DecidedBy = by
-	t := now
-	ap.DecidedAt = &t
-	if err := e.Store.UpdateApproval(ap); err != nil {
-		return domain.NewError(domain.ErrStoreCorrupted, "approval update failed: %v", err)
+	_, _, err = e.Store.TransitionApproval(approvalID, domain.ApprovalPending, domain.ApprovalCancelled, now, by)
+	if err != nil {
+		return err
 	}
+	// A lost race means someone decided first; the decision stands.
 	return nil
 }
 

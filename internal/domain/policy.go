@@ -118,12 +118,22 @@ func (s Scope) AllowsTool(tool string) bool {
 // ScopeDigest returns a stable digest of the scope's policy-relevant content.
 // Authorizations record the digest of the scope they were granted under, so a
 // grant cannot silently survive a scope change (S06's sibling guarantee).
+//
+// Entries are length-prefixed: plain concatenation is ambiguous — a root
+// literally named "/p;root:/q" would otherwise digest identically to the two
+// roots "/p" and "/q".
 func (s Scope) ScopeDigest() string {
 	var b strings.Builder
-	for _, r := range SortedStringsCopy(s.Roots) {
-		b.WriteString("root:")
-		b.WriteString(r)
+	field := func(kind, value string) {
+		b.WriteString(kind)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(value)))
+		b.WriteByte(':')
+		b.WriteString(value)
 		b.WriteByte(';')
+	}
+	for _, r := range SortedStringsCopy(s.Roots) {
+		field("root", r)
 	}
 	kinds := make([]string, 0, len(s.AllowedKinds))
 	for _, k := range s.AllowedKinds {
@@ -131,9 +141,7 @@ func (s Scope) ScopeDigest() string {
 	}
 	sort.Strings(kinds)
 	for _, k := range kinds {
-		b.WriteString("kind:")
-		b.WriteString(k)
-		b.WriteByte(';')
+		field("kind", k)
 	}
 	tools := make([]string, 0, len(s.AllowedTools))
 	for _, t := range s.AllowedTools {
@@ -141,14 +149,10 @@ func (s Scope) ScopeDigest() string {
 	}
 	sort.Strings(tools)
 	for _, t := range tools {
-		b.WriteString("tool:")
-		b.WriteString(t)
-		b.WriteByte(';')
+		field("tool", t)
 	}
-	b.WriteString("steps:")
-	b.WriteString(strconv.Itoa(s.MaxSteps))
-	b.WriteString(";runtime:")
-	b.WriteString(s.MaxRuntime.String())
+	field("steps", strconv.Itoa(s.MaxSteps))
+	field("runtime", s.MaxRuntime.String())
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])
 }

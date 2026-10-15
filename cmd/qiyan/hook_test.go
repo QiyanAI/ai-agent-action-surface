@@ -40,7 +40,7 @@ func newHookFixture(t *testing.T, mode string) *hookFixture {
 	engine := control.New(st)
 	operatorTok := api.NewToken()
 	hookTok := api.NewToken()
-	srv := api.NewServer(st, engine, "test", operatorTok, hookTok)
+	srv := api.NewServer(st, engine, "test", operatorTok, hookTok, dir)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() { ts.Close(); st.Close() })
 

@@ -50,9 +50,11 @@ func NormalizePath(p, base string) string {
 }
 
 // IsAbsoluteNormalized reports whether p is already in the absolute,
-// forward-slash form NormalizePath produces. The control engine requires
-// normalized inputs and treats anything else as unrecognized rather than
-// guessing.
+// forward-slash form NormalizePath produces — including that it is fully
+// cleaned. A path containing "." or ".." segments is NOT normalized: it would
+// pass a lexical prefix comparison against a scope root while the filesystem
+// resolves it elsewhere. The control engine treats anything else as
+// unrecognized rather than guessing.
 func IsAbsoluteNormalized(p string) bool {
 	if p == "" {
 		return false
@@ -60,7 +62,12 @@ func IsAbsoluteNormalized(p string) bool {
 	if strings.ContainsRune(p, '\\') {
 		return false
 	}
-	return isAbsSlash(p)
+	if !isAbsSlash(p) {
+		return false
+	}
+	// path.Clean removes "."/".." segments and duplicate slashes; an input
+	// that is already canonical survives unchanged.
+	return path.Clean(p) == p
 }
 
 // isAbsSlash reports whether a forward-slash path is absolute in the current

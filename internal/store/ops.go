@@ -133,10 +133,12 @@ func (s *Store) AppendDecision(d domain.Decision, action domain.Action) error {
 	return s.appendLocked(evDecisionAppend, DecisionRecord{Decision: d, Action: action, At: time.Now().UTC()}, time.Now().UTC())
 }
 
-// IncrementSteps implements control.Store. A task that cannot be found is an
-// error: the engine treats this failure as deny, so an unregistered task can
-// never quietly consume "no budget".
-func (s *Store) IncrementSteps(task domain.TaskID) error {
+// ConsumeStep implements control.Store: the check and the increment happen
+// under one lock and land in one wal event, so concurrent evaluations cannot
+// overshoot the budget. A task that cannot be found is an error: the engine
+// treats this failure as deny, so an unregistered task can never quietly
+// consume "no budget".
+func (s *Store) ConsumeStep(task domain.TaskID, maxSteps int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.blocked != nil {
@@ -146,9 +148,41 @@ func (s *Store) IncrementSteps(task domain.TaskID) error {
 	if !ok {
 		return domain.NewError(domain.ErrNotFound, "task %s is not registered", task)
 	}
+	if t.StepsUsed >= maxSteps {
+		return domain.NewError(domain.ErrBudgetExhausted, "task %s has used %d of %d steps", task, t.StepsUsed, maxSteps)
+	}
+	now := time.Now().UTC()
 	t.StepsUsed++
-	t.UpdatedAt = time.Now().UTC()
-	return s.appendLocked(evTaskPut, t, time.Now().UTC())
+	t.UpdatedAt = now
+	return s.appendLocked(evTaskPut, t, now)
+}
+
+// TransitionApproval implements control.Store with compare-and-swap semantics
+// under the store lock: the check, the state change, and the wal append are
+// one atomic step.
+func (s *Store) TransitionApproval(id domain.ApprovalID, from, to domain.ApprovalState, at time.Time, by domain.Actor) (domain.ApprovalRequest, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return domain.ApprovalRequest{}, false, storeBlockedErr(s.blocked)
+	}
+	a, ok := s.approvals[id]
+	if !ok {
+		return domain.ApprovalRequest{}, false, domain.NewError(domain.ErrApprovalNotFound, "approval %s not found", id)
+	}
+	if a.State != from {
+		return a, false, nil
+	}
+	a.State = to
+	if to != domain.ApprovalPending {
+		t := at
+		a.DecidedAt = &t
+		a.DecidedBy = by
+	}
+	if err := s.appendLocked(evApprovalPut, a, at); err != nil {
+		return domain.ApprovalRequest{}, false, err
+	}
+	return a, true, nil
 }
 
 // --- registries ---
@@ -396,6 +430,48 @@ func (s *Store) RecentDecisions(n int) ([]DecisionRecord, error) {
 		n = len(s.decisions)
 	}
 	out := append([]DecisionRecord(nil), s.decisions[len(s.decisions)-n:]...)
+	return out, nil
+}
+
+// PutInstallation records an installed runtime integration.
+func (s *Store) PutInstallation(inst Installation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return storeBlockedErr(s.blocked)
+	}
+	if inst.ProjectDir == "" {
+		return domain.NewError(domain.ErrInvalidRequest, "installation needs a project directory")
+	}
+	return s.appendLocked(evInstallPut, inst, time.Now().UTC())
+}
+
+// RemoveInstallation forgets an integration (after a successful undo). It
+// writes a tombstone so the removal also survives replay and restart.
+func (s *Store) RemoveInstallation(projectDir string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return storeBlockedErr(s.blocked)
+	}
+	return s.appendLocked(evInstallPut, map[string]any{
+		"projectDir": projectDir,
+		"deleted":    true,
+	}, time.Now().UTC())
+}
+
+// ListInstallations returns the recorded integrations.
+func (s *Store) ListInstallations() ([]Installation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return nil, storeBlockedErr(s.blocked)
+	}
+	out := make([]Installation, 0, len(s.installations))
+	for _, inst := range s.installations {
+		out = append(out, inst)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ProjectDir < out[j].ProjectDir })
 	return out, nil
 }
 

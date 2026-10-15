@@ -33,7 +33,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	}
 	engine := control.New(st)
 	f := &apiFixture{store: st, opTok: NewToken(), hookTok: NewToken()}
-	f.api = NewServer(st, engine, "test", f.opTok, f.hookTok)
+	f.api = NewServer(st, engine, "test", f.opTok, f.hookTok, t.TempDir())
 	f.srv = httptest.NewServer(f.api.Handler())
 	t.Cleanup(func() { f.srv.Close(); st.Close() })
 	return f

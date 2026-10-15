@@ -68,7 +68,7 @@ func TestPersistAndReload(t *testing.T) {
 	if err := s.CreateAuthorization(auth); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.IncrementSteps(task.ID); err != nil {
+	if err := s.ConsumeStep(task.ID, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.AppendDecision(domain.Decision{Outcome: domain.OutcomeAllow, TaskID: task.ID}, action); err != nil {
@@ -191,14 +191,14 @@ func TestCompactionPreservesState(t *testing.T) {
 		t.Fatal(err)
 	}
 	ag, m, task := putFixture(t, s)
-	if err := s.IncrementSteps(task.ID); err != nil {
+	if err := s.ConsumeStep(task.ID, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Compact(); err != nil {
 		t.Fatal(err)
 	}
 	// Mutations after compaction must replay cleanly from the wal.
-	if err := s.IncrementSteps(task.ID); err != nil {
+	if err := s.ConsumeStep(task.ID, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -267,13 +267,72 @@ func TestClaimIsAtomicAndSingleUse(t *testing.T) {
 	}
 }
 
-func TestIncrementStepsRequiresRegisteredTask(t *testing.T) {
+func TestConsumeStepRequiresRegisteredTask(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err := s.IncrementSteps(domain.NewTaskID()); domain.ClassOf(err) != domain.ErrNotFound {
+	if err := s.ConsumeStep(domain.NewTaskID(), 10); domain.ClassOf(err) != domain.ErrNotFound {
 		t.Fatalf("unknown task must not silently consume budget, got %v", err)
+	}
+}
+
+func TestConsumeStepBudgetAndTransitionApprovalCAS(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ag, m, task := putFixture(t, s)
+
+	// Budget: exactly maxSteps consumptions succeed.
+	for i := 0; i < 3; i++ {
+		if err := s.ConsumeStep(task.ID, 3); err != nil {
+			t.Fatalf("consume %d: %v", i, err)
+		}
+	}
+	if err := s.ConsumeStep(task.ID, 3); domain.ClassOf(err) != domain.ErrBudgetExhausted {
+		t.Fatalf("budget must be exhausted, got %v", err)
+	}
+
+	// Concurrent ConsumeStep: only the remaining budget may succeed.
+	task2 := domain.Task{ID: domain.NewTaskID(), MissionID: m.ID, Role: domain.RoleBuilder,
+		State: domain.TaskRunning, AgentID: ag.ID}
+	if err := s.PutTask(task2); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	okCount := 0
+	var mu sync.Mutex
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.ConsumeStep(task2.ID, 5); err == nil {
+				mu.Lock()
+				okCount++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if okCount != 5 {
+		t.Fatalf("exactly 5 concurrent consumptions may pass a budget of 5, got %d", okCount)
+	}
+
+	// TransitionApproval CAS: one pending approval, one winner.
+	ap := domain.ApprovalRequest{ID: domain.NewApprovalID(), TaskID: task.ID, AgentID: ag.ID,
+		State: domain.ApprovalPending, RequestedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}
+	if err := s.CreateApproval(ap); err != nil {
+		t.Fatal(err)
+	}
+	_, won1, err := s.TransitionApproval(ap.ID, domain.ApprovalPending, domain.ApprovalApproved, time.Now(), domain.Actor{Source: domain.SourceLocalUser})
+	if err != nil || !won1 {
+		t.Fatalf("first transition must win: %v %v", won1, err)
+	}
+	_, won2, err := s.TransitionApproval(ap.ID, domain.ApprovalPending, domain.ApprovalDenied, time.Now(), domain.Actor{Source: domain.SourceLocalUser})
+	if err != nil || won2 {
+		t.Fatalf("second transition must lose: %v %v", won2, err)
 	}
 }

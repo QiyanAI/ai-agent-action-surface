@@ -271,3 +271,53 @@ func TestAgentRoleDefaults(t *testing.T) {
 		t.Error("builder is not read-only by default")
 	}
 }
+
+// Regression: an absolute path containing ".." passes a lexical prefix check
+// against a scope root while the filesystem resolves it elsewhere. The
+// normalized-form guard must reject it.
+func TestIsAbsoluteNormalizedRejectsUncleanedPaths(t *testing.T) {
+	bad := []string{
+		"C:/proj/../outside/x",
+		"C:/proj/./x",
+		"C:/proj//x",
+		"proj/x",
+		`C:\proj\x`,
+	}
+	for _, p := range bad {
+		if IsAbsoluteNormalized(p) {
+			t.Errorf("IsAbsoluteNormalized(%q) must be false", p)
+		}
+	}
+	if !IsAbsoluteNormalized("C:/proj/x") {
+		t.Error("clean absolute path must pass")
+	}
+}
+
+// Regression: unescaped concatenation let one crafted root digest the same
+// as two other roots. Length prefixes must make those distinct.
+func TestScopeDigestNoConcatenationCollisions(t *testing.T) {
+	a := Scope{Roots: []string{"C:/p", "C:/q"}, MaxSteps: 1, MaxRuntime: time.Minute}
+	b := Scope{Roots: []string{"C:/p;root:C:/q"}, MaxSteps: 1, MaxRuntime: time.Minute}
+	if a.ScopeDigest() == b.ScopeDigest() {
+		t.Fatal("root lists that merely concatenate alike must not digest alike")
+	}
+}
+
+// Regression: an approval for "change this file" must not cover different
+// content at the same path when the transport provided the content.
+func TestContentDigestBindsOperationContent(t *testing.T) {
+	base := Action{Kind: ActionFileModify, Tool: "Edit", Path: "C:/proj/a.go"}
+	one := base
+	one.ContentDigest = ContentDigestOf("old line", "new line A", "")
+	two := base
+	two.ContentDigest = ContentDigestOf("old line", "new line B", "")
+	if one.CanonicalDigest() == two.CanonicalDigest() {
+		t.Fatal("different content at the same path must digest differently")
+	}
+	if one.CanonicalDigest() != func() string { c := one; return c.CanonicalDigest() }() {
+		t.Fatal("identical content must digest identically")
+	}
+	if base.CanonicalDigest() == one.CanonicalDigest() {
+		t.Fatal("an empty content digest must differ from a bound one")
+	}
+}

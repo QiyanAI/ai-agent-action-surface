@@ -77,7 +77,7 @@ func TestHelpNamesEveryImplementedVerb(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, verb := range []string{"help", "version", "serve", "hook", "status", "agents", "approvals", "approve", "deny", "mission", "task", "session"} {
+	for _, verb := range []string{"help", "version", "serve", "hook", "status", "agents", "approvals", "approve", "deny", "mission", "task", "session", "connect", "run"} {
 		if !strings.Contains(stdout, verb) {
 			t.Errorf("help output does not name the %q verb:\n%s", verb, stdout)
 		}

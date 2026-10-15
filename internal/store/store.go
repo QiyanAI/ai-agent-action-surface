@@ -45,17 +45,33 @@ type Store struct {
 	lastSeq uint64
 	walFile *os.File
 
-	agents      map[domain.AgentID]agentRecord
-	tokens      map[string]domain.AgentID // sha256(token) -> agent
-	missions    map[domain.MissionID]domain.Mission
-	tasks       map[domain.TaskID]domain.Task
-	sessions    map[string]SessionBinding // runtime session id -> agent/task binding
-	approvals   map[domain.ApprovalID]domain.ApprovalRequest
-	approvalSeq []domain.ApprovalID
-	auths       map[domain.ApprovalID]domain.Authorization
-	decisions   []DecisionRecord
-	results     []ResultEvent
-	coverage    map[string]domain.Coverage
+	agents        map[domain.AgentID]agentRecord
+	tokens        map[string]domain.AgentID // sha256(token) -> agent
+	missions      map[domain.MissionID]domain.Mission
+	tasks         map[domain.TaskID]domain.Task
+	sessions      map[string]SessionBinding // runtime session id -> agent/task binding
+	approvals     map[domain.ApprovalID]domain.ApprovalRequest
+	approvalSeq   []domain.ApprovalID
+	auths         map[domain.ApprovalID]domain.Authorization
+	decisions     []DecisionRecord
+	results       []ResultEvent
+	coverage      map[string]domain.Coverage
+	installations map[string]Installation
+}
+
+// Installation records one runtime integration Qiyan has installed: where the
+// settings live, how to undo it, and which verified version/tier it was
+// installed under.
+type Installation struct {
+	ProjectDir    string    `json:"projectDir"`
+	SettingsPath  string    `json:"settingsPath"`
+	BackupPath    string    `json:"backupPath,omitempty"`
+	HookCommand   string    `json:"hookCommand"`
+	ClaudeBinary  string    `json:"claudeBinary"`
+	Version       string    `json:"version"`
+	Tier          string    `json:"tier"`
+	ProbeEvidence []string  `json:"probeEvidence,omitempty"`
+	InstalledAt   time.Time `json:"installedAt"`
 }
 
 // ResultEvent is one execution result reported back by an agent: what the
@@ -105,21 +121,23 @@ const (
 	evDecisionAppend = "decision.append"
 	evResultAppend   = "result.append"
 	evCoveragePut    = "coverage.put"
+	evInstallPut     = "installation.put"
 )
 
 // snapshot is the compacted state.
 type snapshot struct {
-	LastSeq     uint64                                       `json:"lastSeq"`
-	Agents      map[domain.AgentID]agentRecord               `json:"agents"`
-	Missions    map[domain.MissionID]domain.Mission          `json:"missions"`
-	Tasks       map[domain.TaskID]domain.Task                `json:"tasks"`
-	Sessions    map[string]SessionBinding                    `json:"sessions"`
-	Approvals   map[domain.ApprovalID]domain.ApprovalRequest `json:"approvals"`
-	ApprovalSeq []domain.ApprovalID                          `json:"approvalSeq"`
-	Auths       map[domain.ApprovalID]domain.Authorization   `json:"authorizations"`
-	Decisions   []DecisionRecord                             `json:"decisions"`
-	Results     []ResultEvent                                `json:"results"`
-	Coverage    map[string]domain.Coverage                   `json:"coverage"`
+	LastSeq       uint64                                       `json:"lastSeq"`
+	Agents        map[domain.AgentID]agentRecord               `json:"agents"`
+	Missions      map[domain.MissionID]domain.Mission          `json:"missions"`
+	Tasks         map[domain.TaskID]domain.Task                `json:"tasks"`
+	Sessions      map[string]SessionBinding                    `json:"sessions"`
+	Approvals     map[domain.ApprovalID]domain.ApprovalRequest `json:"approvals"`
+	ApprovalSeq   []domain.ApprovalID                          `json:"approvalSeq"`
+	Auths         map[domain.ApprovalID]domain.Authorization   `json:"authorizations"`
+	Decisions     []DecisionRecord                             `json:"decisions"`
+	Results       []ResultEvent                                `json:"results"`
+	Coverage      map[string]domain.Coverage                   `json:"coverage"`
+	Installations map[string]Installation                      `json:"installations"`
 }
 
 // Open loads (or creates) the store rooted at dir. It only reports an error
@@ -132,15 +150,16 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("store: state directory: %w", err)
 	}
 	s := &Store{
-		dir:       dir,
-		agents:    map[domain.AgentID]agentRecord{},
-		tokens:    map[string]domain.AgentID{},
-		missions:  map[domain.MissionID]domain.Mission{},
-		tasks:     map[domain.TaskID]domain.Task{},
-		sessions:  map[string]SessionBinding{},
-		approvals: map[domain.ApprovalID]domain.ApprovalRequest{},
-		auths:     map[domain.ApprovalID]domain.Authorization{},
-		coverage:  map[string]domain.Coverage{},
+		dir:           dir,
+		agents:        map[domain.AgentID]agentRecord{},
+		tokens:        map[string]domain.AgentID{},
+		missions:      map[domain.MissionID]domain.Mission{},
+		tasks:         map[domain.TaskID]domain.Task{},
+		sessions:      map[string]SessionBinding{},
+		approvals:     map[domain.ApprovalID]domain.ApprovalRequest{},
+		auths:         map[domain.ApprovalID]domain.Authorization{},
+		coverage:      map[string]domain.Coverage{},
+		installations: map[string]Installation{},
 	}
 	if err := s.load(); err != nil {
 		s.blocked = err
@@ -341,6 +360,24 @@ func (s *Store) apply(ev walEvent) error {
 			return err
 		}
 		s.coverage[c.Path] = c
+	case evInstallPut:
+		// One event type carries both upserts and tombstones; replay applies
+		// whichever it finds, so removal survives a restart too.
+		var rec struct {
+			Installation
+			Deleted bool `json:"deleted"`
+		}
+		if err := json.Unmarshal(ev.Payload, &rec); err != nil {
+			return err
+		}
+		if rec.ProjectDir == "" {
+			return nil
+		}
+		if rec.Deleted {
+			delete(s.installations, rec.ProjectDir)
+		} else {
+			s.installations[rec.ProjectDir] = rec.Installation
+		}
 	default:
 		return fmt.Errorf("unknown event type %q", ev.Type)
 	}
@@ -378,6 +415,9 @@ func (s *Store) applySnapshot(snap snapshot) {
 	if snap.Coverage != nil {
 		s.coverage = snap.Coverage
 	}
+	if snap.Installations != nil {
+		s.installations = snap.Installations
+	}
 	s.lastSeq = snap.LastSeq
 }
 
@@ -391,17 +431,18 @@ func (s *Store) Compact() error {
 		return domain.NewError(domain.ErrStoreCorrupted, "state store is blocked: %v", s.blocked)
 	}
 	snap := snapshot{
-		LastSeq:     s.lastSeq,
-		Agents:      s.agents,
-		Missions:    s.missions,
-		Tasks:       s.tasks,
-		Sessions:    s.sessions,
-		Approvals:   s.approvals,
-		ApprovalSeq: s.approvalSeq,
-		Auths:       s.auths,
-		Decisions:   s.decisions,
-		Results:     s.results,
-		Coverage:    s.coverage,
+		LastSeq:       s.lastSeq,
+		Agents:        s.agents,
+		Missions:      s.missions,
+		Tasks:         s.tasks,
+		Sessions:      s.sessions,
+		Approvals:     s.approvals,
+		ApprovalSeq:   s.approvalSeq,
+		Auths:         s.auths,
+		Decisions:     s.decisions,
+		Results:       s.results,
+		Coverage:      s.coverage,
+		Installations: s.installations,
 	}
 	raw, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {

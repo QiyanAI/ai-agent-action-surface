@@ -114,13 +114,24 @@ func TestWriteAllowedInControlledAuto(t *testing.T) {
 	}
 }
 
-func TestSafeCommandAllowedInAllModes(t *testing.T) {
-	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+func TestSafeCommandAllowedInAutonomousModes(t *testing.T) {
+	// Curated commands run without asking in the two autonomous modes; in
+	// companion mode even a read-only program waits for the user.
+	for _, mode := range []domain.AutonomyMode{domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
 		f := newFixture(t, mode)
 		for _, cmd := range []string{"go test ./...", "git status", "ls -la", "go build ./cmd/qiyan", "cat notes.md"} {
 			if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
 				t.Errorf("mode %s: %q should be allowed, got %s", mode, cmd, got)
 			}
+		}
+	}
+}
+
+func TestCompanionGatesEvenReadOnlyPrograms(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	for _, cmd := range []string{"go test ./...", "git status", "ls -la"} {
+		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeRequireApproval {
+			t.Errorf("companion mode: %q must wait for the user, got %s", cmd, got)
 		}
 	}
 }
@@ -499,7 +510,16 @@ func TestClassifyCommandTable(t *testing.T) {
 	}{
 		{"ls -la", CmdSafe},
 		{"go test ./...", CmdSafe},
-		{"go build -o bin/x ./cmd/x", CmdSafe},
+		{"go build ./cmd/qiyan", CmdSafe},
+		{"npm --version", CmdSafe},
+		// Output-redirecting flags demote even curated programs.
+		{"go build -o bin/x ./cmd/x", CmdSensitive},
+		{"go test -coverprofile=cover.out ./...", CmdSensitive},
+		{"sort -o out.txt in.txt", CmdSensitive},
+		{"uniq in.txt out.txt", CmdSensitive},
+		// A value-taking flag must not be read as the subcommand:
+		// `git -C log push` is `git push` from directory "log".
+		{"git -C log push", CmdSensitive},
 		{"git status", CmdSafe},
 		{"git diff --stat", CmdSafe},
 		{"git push", CmdSensitive},
@@ -549,5 +569,106 @@ func TestWindowsCwdShadowingRegression(t *testing.T) {
 	got, _ = ClassifyCommand("cat notes.txt", "")
 	if runtime.GOOS == "windows" && got != CmdUnrecognized {
 		t.Fatalf("bare command without a declared cwd must not classify as safe on Windows, got %s", got)
+	}
+}
+
+// Regression: an absent roster must not silently remove the identity check.
+func TestRosterRequiredAlways(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	req := f.req(read("C:/proj/a.txt"))
+	req.Agents = nil
+	if d, _ := f.engine.Evaluate(req); d.Outcome == domain.OutcomeAllow {
+		t.Fatalf("missing roster must deny, got %s", d.Outcome)
+	}
+}
+
+// Regression: kind=session.local is transport-declared; it must pass only
+// for tools that are actually known session bookkeeping.
+func TestSessionLocalRequiresBookkeepingTool(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	f.mission.Policy.Scope.AllowedTools = append(f.mission.Policy.Scope.AllowedTools, "TodoWrite", "mystery.tool")
+	f.mission.Policy.Scope.AllowedKinds = append(f.mission.Policy.Scope.AllowedKinds, domain.ActionSessionLocal)
+
+	real := domain.Action{Kind: domain.ActionSessionLocal, Tool: "TodoWrite"}
+	if got := f.eval(t, real).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("known bookkeeping tool must be allowed, got %s", got)
+	}
+	fake := domain.Action{Kind: domain.ActionSessionLocal, Tool: "mystery.tool"}
+	if got := f.eval(t, fake).Outcome; got != domain.OutcomeRequireApproval {
+		t.Fatalf("a declared session.local on an unknown tool must not skip the gate, got %s", got)
+	}
+}
+
+// Regression: the engine must stamp the coverage the transport declared, and
+// UNKNOWN when nothing was declared — never a hardcoded ENFORCED.
+func TestCoverageStampedFromRequest(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+
+	req := f.req(read("C:/proj/a.txt"))
+	req.Coverage = domain.CoverageEnforced
+	if d, _ := f.engine.Evaluate(req); d.Coverage != domain.CoverageEnforced {
+		t.Fatalf("declared coverage must be stamped, got %s", d.Coverage)
+	}
+	req2 := f.req(read("C:/proj/a.txt"))
+	if d, _ := f.engine.Evaluate(req2); d.Coverage != domain.CoverageUnknown {
+		t.Fatalf("undeclared coverage must be UNKNOWN, got %s", d.Coverage)
+	}
+}
+
+// Regression: swapping the content of an approved edit must not reuse the
+// approval (the hook transport binds content; the API path binds it when the
+// host supplies contentDigest).
+func TestApprovalContentSwapDoesNotReuseGrant(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	a := write("C:/proj/src/a.go")
+	a.ContentDigest = domain.ContentDigestOf("old", "approved change", "")
+	d := f.eval(t, a)
+	if d.Outcome != domain.OutcomeRequireApproval {
+		t.Fatalf("companion write must ask, got %s", d.Outcome)
+	}
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	swapped := write("C:/proj/src/a.go")
+	swapped.ContentDigest = domain.ContentDigestOf("old", "DIFFERENT change", "")
+	if got := f.eval(t, swapped).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("different content must not reuse the approval")
+	}
+	// The original content still claims its grant exactly once.
+	if got := f.eval(t, a).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("the exact approved content should run once, got %s", got)
+	}
+}
+
+// Regression (adversarial review, confirmed): program-level safety must not
+// let a curated read-only program reach outside the authorized roots through
+// its arguments.
+func TestSafeCommandArgumentsStayInScope(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+
+	outside := f.eval(t, bash("cat C:/outside-note.txt"))
+	if outside.Outcome != domain.OutcomeDeny {
+		t.Fatalf("reading outside the roots via cat must deny, got %s", outside.Outcome)
+	}
+	if outside.Reasons[0].Code != domain.ReasonPathOutsideScope {
+		t.Fatalf("reason should be path_outside_scope, got %v", outside.Reasons[0].Code)
+	}
+	if got := f.eval(t, bash("ls -la C:/outside-dir")).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("listing outside must deny, got %s", got)
+	}
+	if got := f.eval(t, bash("go build ../outside")).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("build target outside must deny, got %s", got)
+	}
+
+	// In-scope forms stay allowed: bare names resolve inside the cwd.
+	for _, cmd := range []string{"cat note.txt", "cat sub/note.txt", "go build ./...", "git status", "grep TODO main.go"} {
+		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
+			t.Errorf("%q should stay allowed, got %s", cmd, got)
+		}
+	}
+
+	// A flag carrying an unresolvable path value cannot be vouched for.
+	if got := f.eval(t, bash("grep -f/outside/pats .")).Outcome; got != domain.OutcomeRequireApproval {
+		t.Fatalf("unresolvable path flag must require approval, got %s", got)
 	}
 }

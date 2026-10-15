@@ -52,8 +52,20 @@ func BuildClaudeCodeAction(toolName string, input json.RawMessage, cwd string) (
 			p = cwd
 		}
 		return domain.Action{Kind: domain.ActionFileRead, Tool: toolName, Path: domain.NormalizePath(p, cwd)}, nil
-	case "Write", "Edit", "NotebookEdit":
-		return fileAction(domain.ActionFileModify, "file_path"), nil
+	case "Write":
+		a := fileAction(domain.ActionFileModify, "file_path")
+		a.ContentDigest = domain.ContentDigestOf(str("content"))
+		return a, nil
+	case "Edit":
+		a := fileAction(domain.ActionFileModify, "file_path")
+		// Rebinding on old+new means an approval for one change cannot be
+		// replayed for a different change at the same path.
+		a.ContentDigest = domain.ContentDigestOf(str("old_string"), str("new_string"), str("replace_all"))
+		return a, nil
+	case "NotebookEdit":
+		a := fileAction(domain.ActionFileModify, "file_path")
+		a.ContentDigest = domain.ContentDigestOf(str("new_source"), str("cell_id"), str("edit_mode"))
+		return a, nil
 	case "Bash":
 		cmd := str("command")
 		return domain.Action{
@@ -98,6 +110,7 @@ type ActionPayload struct {
 	Path           string `json:"path,omitempty"`
 	Command        string `json:"command,omitempty"`
 	Cwd            string `json:"cwd,omitempty"`
+	ContentDigest  string `json:"contentDigest,omitempty"`
 	URL            string `json:"url,omitempty"`
 	CredentialRef  string `json:"credentialRef,omitempty"`
 	DelegationTo   string `json:"delegationTo,omitempty"`
@@ -127,6 +140,9 @@ func (p ActionPayload) ToAction() domain.Action {
 	if p.Cwd != "" {
 		a.Cwd = domain.NormalizePath(p.Cwd, "")
 	}
+	if p.ContentDigest != "" {
+		a.ContentDigest = p.ContentDigest
+	}
 	if p.DelegationTo != "" {
 		a.DelegationTo = domain.AgentID(p.DelegationTo)
 	}
@@ -147,6 +163,7 @@ func ActionToPayload(a domain.Action) ActionPayload {
 		Path:           a.Path,
 		Command:        a.Command,
 		Cwd:            a.Cwd,
+		ContentDigest:  a.ContentDigest,
 		URL:            a.URL,
 		CredentialRef:  a.CredentialRef,
 		DelegationTo:   string(a.DelegationTo),

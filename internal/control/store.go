@@ -41,8 +41,20 @@ type Store interface {
 
 	// AppendDecision records every decision (all outcomes) for audit.
 	AppendDecision(d domain.Decision, action domain.Action) error
-	// IncrementSteps bumps the task's controlled-action counter.
-	IncrementSteps(task domain.TaskID) error
+
+	// ConsumeStep atomically checks and consumes one step of the task's
+	// budget: it fails with ErrBudgetExhausted when the task has reached
+	// maxSteps, and with ErrNotFound when the task is unknown — the latter
+	// only for stores backed by a task registry, which must fail closed.
+	// Checking and consuming in one operation is what makes the budget hold
+	// under concurrent evaluations.
+	ConsumeStep(task domain.TaskID, maxSteps int) error
+
+	// TransitionApproval atomically moves an approval from one state to
+	// another and reports whether this caller performed the transition.
+	// Decisions and cancellations race through here so a pending approval
+	// can be decided exactly once.
+	TransitionApproval(id domain.ApprovalID, from, to domain.ApprovalState, at time.Time, by domain.Actor) (domain.ApprovalRequest, bool, error)
 }
 
 // InMemoryStore is a Store for tests and for the engine's own unit runs. It is
@@ -160,12 +172,38 @@ func (s *InMemoryStore) AppendDecision(d domain.Decision, action domain.Action) 
 	return nil
 }
 
-// IncrementSteps implements Store.
-func (s *InMemoryStore) IncrementSteps(task domain.TaskID) error {
+// ConsumeStep implements Store. The in-memory double tracks counts directly
+// and does not require prior registration; registry-backed stores are the
+// ones that must fail closed on unknown tasks.
+func (s *InMemoryStore) ConsumeStep(task domain.TaskID, maxSteps int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.steps[task] >= maxSteps {
+		return domain.NewError(domain.ErrBudgetExhausted, "step budget spent")
+	}
 	s.steps[task]++
 	return nil
+}
+
+// TransitionApproval implements Store with compare-and-swap semantics.
+func (s *InMemoryStore) TransitionApproval(id domain.ApprovalID, from, to domain.ApprovalState, at time.Time, by domain.Actor) (domain.ApprovalRequest, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.approvals[id]
+	if !ok {
+		return domain.ApprovalRequest{}, false, domain.NewError(domain.ErrApprovalNotFound, "approval %s not found", id)
+	}
+	if a.State != from {
+		return a, false, nil
+	}
+	a.State = to
+	t := at
+	if to != domain.ApprovalPending {
+		a.DecidedAt = &t
+		a.DecidedBy = by
+	}
+	s.approvals[id] = a
+	return a, true, nil
 }
 
 // Decisions returns a copy of the recorded decisions (test helper).

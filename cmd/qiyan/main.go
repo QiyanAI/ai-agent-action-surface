@@ -49,6 +49,10 @@ Usage:
   qiyan mission create --goal G       Create a mission (flags: --root, --mode, --steps, --runtime-min)
   qiyan task create --mission M --role R   Create a task under a mission
   qiyan session bind --task T --agent A --session S   Bind a runtime session to a task
+  qiyan connect claude --project DIR  Connect Claude Code under Qiyan control (with live probe)
+  qiyan connect status                Show installed integrations
+  qiyan connect undo --project DIR    Disconnect Claude Code and undo Qiyan's settings
+  qiyan run --mission M               Run the mission's three-role fleet and follow it
 
 Flags:
   -h, --help       Show this help text
@@ -101,6 +105,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runTask(args[1:], stdout, stderr)
 	case "session":
 		return runSession(args[1:], stdout, stderr)
+	case "connect":
+		return runConnect(args[1:], stdout, stderr, os.Stdin)
+	case "run":
+		return runMissionRun(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "%s: unknown command %q\n\n", programName, args[0])
 		fmt.Fprint(stderr, usageText)

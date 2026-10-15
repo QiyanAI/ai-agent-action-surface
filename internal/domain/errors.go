@@ -80,23 +80,29 @@ func (e *DomainError) WithReasons(reasons ...Reason) *DomainError {
 }
 
 // ClassOf extracts the stable class from any error this package or the control
-// engine produces; unknown errors are classified INTERNAL. The control engine
-// maps classes to outcomes, so this function is the one place that decides how
-// an unexpected failure is treated — and UNKNOWN never becomes ALLOW.
+// engine produces; unknown errors — including a DomainError whose class was
+// never set — are classified INTERNAL. The control engine maps classes to
+// outcomes, so this function is the one place that decides how an unexpected
+// failure is treated — and UNKNOWN never becomes ALLOW.
 func ClassOf(err error) ErrorClass {
 	if err == nil {
 		return ""
 	}
 	if de, ok := err.(*DomainError); ok {
+		if de.Class == "" {
+			return ErrInternal
+		}
 		return de.Class
 	}
 	return ErrInternal
 }
 
 // FailClosedOutcome maps an error to the outcome a protected path must take.
-// Every branch returns DENY or UNKNOWN; this is the mechanical guarantee behind
-// "检查程序异常、控制服务失联、超时、无效响应或身份无法确认，必须……拒绝或停止"
-// (book §09).
+// Every error branch returns DENY (approval-required maps to its outcome);
+// ALLOW is returned only for a nil error — "there was no failure to map", not
+// "the action is allowed". Callers must never fabricate an ALLOW from this
+// function; this is the mechanical guarantee behind "检查程序异常、控制服务
+// 失联、超时、无效响应或身份无法确认，必须……拒绝或停止" (book §09).
 func FailClosedOutcome(err error) Outcome {
 	switch ClassOf(err) {
 	case "":

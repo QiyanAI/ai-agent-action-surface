@@ -103,6 +103,14 @@ type Action struct {
 	DelegationTask TaskID
 	DelegationKind ActionKind // the kind of work being delegated
 
+	// ContentDigest binds what a file.create/modify action would write: the
+	// content for a Write, old+new strings for an Edit. Without it, an
+	// approval for "change this file" would also authorize different content
+	// at the same path. Empty means the transport could not provide content
+	// (some integrations do not); the approval then covers the operation
+	// target but not its content, and the approval UI shows the raw input.
+	ContentDigest string
+
 	// Raw is the runtime's original request fragment (tool input), kept for
 	// evidence. Excluded from the digest by design.
 	Raw string
@@ -139,7 +147,20 @@ func (a Action) canonical() string {
 	field("dto", string(a.DelegationTo))
 	field("dtask", string(a.DelegationTask))
 	field("dkind", string(a.DelegationKind))
+	field("content", a.ContentDigest)
 	return b.String()
+}
+
+// ContentDigestOf hashes an operation's content for Action.ContentDigest.
+func ContentDigestOf(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(strconv.Itoa(len(p))))
+		h.Write([]byte{':'})
+		h.Write([]byte(p))
+		h.Write([]byte{';'})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // DisplayTarget returns a short human-readable target used in logs and as a

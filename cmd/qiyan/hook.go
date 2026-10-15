@@ -49,6 +49,9 @@ type decisionResponse struct {
 }
 
 func runHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "probe" {
+		return runHookProbe(args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "pretooluse" {
 		fmt.Fprintf(stderr, "%s: usage: %s hook pretooluse [--state-dir DIR] [--timeout SECONDS]\n", programName, programName)
 		return 2
@@ -141,6 +144,34 @@ func runHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		msg := renderReasons(dec.Reasons)
 		text := fmt.Sprintf("Qiyan blocked this action.\n该操作已被 Qiyan 阻止。\n%s", msg)
 		return blockWithMessage(stderr, text)
+	}
+}
+
+// runHookProbe is the self-contained hook used by the connector's real
+// enforcement probe (internal/connector): it behaves per mode so a live
+// runtime can be measured, not assumed. It is not part of the installed
+// integration; `qiyan serve` users never invoke it directly.
+func runHookProbe(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintf(stderr, "%s: usage: %s hook probe allow|deny2|crash|timeout|garbage\n", programName, programName)
+		return 2
+	}
+	switch args[0] {
+	case "allow":
+		return 0
+	case "deny2":
+		fmt.Fprintln(stderr, "Qiyan probe: this action was blocked by the probe hook")
+		return 2
+	case "crash":
+		return 1
+	case "timeout":
+		time.Sleep(30 * time.Second)
+		return 0
+	case "garbage":
+		fmt.Fprintln(stdout, "this is not json")
+		return 0
+	default:
+		return 2
 	}
 }
 

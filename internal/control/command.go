@@ -15,23 +15,38 @@ import (
 // to "safely restrict arbitrary shell commands by string matching". The
 // classifier recognizes a small, curated set of read-only programs and a set
 // of known high-impact programs; everything else — including anything with
-// shell metacharacters — is classed unrecognized and gated behind explicit
-// user approval. The gate is the approval, not a claim of semantic
-// understanding.
+// shell metacharacters, any path-form program, and any argument form that can
+// redirect output somewhere unknown — is gated behind explicit user approval.
+// The gate is the approval, not a claim of semantic understanding.
+//
+// Consequences of that honesty, applied deliberately after adversarial review:
+//
+//   - Programs that can write files through their own flags (sort -o,
+//     uniq in out, …) are NOT on the safe list at all.
+//   - Subcommand programs (go, git) are classified only after skipping flags
+//     that take a value, and any output-redirecting flag (-o, --output,
+//     -toolexec, …) demotes the command.
+//   - An unknown flag before a subcommand demotes the command: it might have
+//     swallowed the real subcommand token.
+//   - Path-form programs (./x, /usr/bin/x, ..\\x) are never vouched for by
+//     base name, and on Windows a bare name is vouched only if the working
+//     directory does not contain a same-named executable that cmd.exe would
+//     find first.
 
 // CommandClass is the classifier's verdict on one command line.
 type CommandClass string
 
 const (
-	// CmdSafe: a curated program in a curated form — the standard usage of a
-	// read-only tool, or a build/test subcommand whose writes land in the
-	// working tree the scope already covers. Safe-to-run, not "provably
-	// effect-free".
+	// CmdSafe: a curated program in a curated form — a read-only tool whose
+	// recognized usage cannot direct writes, or a build/test subcommand whose
+	// writes land in the working tree the scope already covers.
 	CmdSafe CommandClass = "safe"
 	// CmdSensitive: a known high-impact program (delete, network, package
-	// management, process control, shell wrappers, interpreters).
+	// management, process control, shell wrappers, interpreters), or a
+	// subcommand form that could not be verified.
 	CmdSensitive CommandClass = "sensitive"
-	// CmdUnrecognized: anything else, including compound or dynamic commands.
+	// CmdUnrecognized: anything else, including compound or dynamic commands,
+	// path-form programs, and name-shadowed programs.
 	CmdUnrecognized CommandClass = "unrecognized"
 )
 
@@ -39,23 +54,48 @@ const (
 // redirecting. Their presence alone upgrades any command to unrecognized.
 const shellMetachars = ";|&`$><\n\r(){}[]*?~!"
 
-// readOnlyPrograms may run without approval. Every entry's standard usage
-// observes; none writes, deletes, installs or reaches the network.
+// readOnlyPrograms may run without approval. Every entry's recognized usage
+// only reads or prints: none of them offers a flag that writes a named file.
+//
+// Deliberately absent although superficially read-only: sort (-o writes),
+// uniq (second operand writes), and anything else with an output-file mode.
+// A build tool's default output goes to the working tree, which the scope
+// already covers, so go build/test remain "safe" only through the screened
+// subcommand path below.
 var readOnlyPrograms = map[string]bool{
 	"ls": true, "dir": true, "pwd": true, "cd": true,
 	"cat": true, "head": true, "tail": true, "wc": true,
 	"grep": true, "echo": true, "date": true, "whoami": true,
 	"hostname": true, "uname": true, "which": true, "where": true,
 	"true": true, "false": true, "test": true, "type": true,
-	"stat": true, "file": true, "diff": true, "sort": true, "uniq": true,
+	"stat": true, "file": true, "diff": true,
 }
 
-// subcommandReadOnlyPrograms need a recognized read-only subcommand.
+// subcommandReadOnlyPrograms lists subcommands that may run without approval
+// once the surrounding flag structure has been verified.
 var subcommandReadOnlyPrograms = map[string]map[string]bool{
 	"go":   {"version": true, "list": true, "vet": true, "build": true, "test": true, "env": true},
 	"git":  {"status": true, "log": true, "diff": true, "show": true, "rev-parse": true, "ls-files": true, "describe": true, "blame": true, "shortlog": true},
 	"npm":  {"--version": true, "-v": true},
 	"node": {"--version": true, "-v": true},
+}
+
+// valueFlags lists, per program, the flags that consume the following token.
+// A subcommand scan must skip those values or it will read the value as the
+// subcommand (git -C log push is `git push` run from directory `log`).
+var valueFlags = map[string]map[string]bool{
+	"git": {"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--exec-path": true, "--config-env": true},
+	"go":  {"-C": true},
+}
+
+// outputFlags lists flag prefixes that can redirect a program's writes to a
+// caller-chosen location. Any occurrence demotes a would-be safe command:
+// the default output location (the working tree) is inside the scope, a
+// redirected one is not verified to be.
+var outputFlags = []string{
+	"-o", "--output", "-toolexec", "-exec", "-coverprofile", "-cpuprofile",
+	"-memprofile", "-blockprofile", "-mutexprofile", "-trace", "-pgo",
+	"-overlay", "-modfile", "-C", "--git-dir", "--work-tree", "--exec-path",
 }
 
 // sensitivePrograms are recognized high-impact programs. Running them is not
@@ -65,6 +105,8 @@ var sensitivePrograms = map[string]bool{
 	"rm": true, "rmdir": true, "rd": true, "del": true, "erase": true,
 	"dd": true, "truncate": true, "chmod": true, "chown": true, "chattr": true,
 	"icacls": true, "takeown": true, "attrib": true, "ln": true,
+	// writers by flag that cannot be argument-screened reliably
+	"sort": true, "uniq": true, "tee": true, "sed": true, "awk": true,
 	// process and system control
 	"kill": true, "pkill": true, "killall": true, "taskkill": true,
 	"shutdown": true, "reboot": true, "service": true, "systemctl": true,
@@ -83,34 +125,20 @@ var sensitivePrograms = map[string]bool{
 	"powershell": true, "pwsh": true, "cmd": true, "bash": true, "sh": true,
 	"zsh": true, "fish": true, "python": true, "python3": true, "py": true,
 	"node": true, "deno": true, "bun": true, "perl": true, "ruby": true,
-	"php": true, "sed": true, "awk": true, "xargs": true, "find": true,
+	"php": true, "xargs": true, "find": true,
 	"eval": true, "exec": true, "source": true, "env": true,
 	// file moving that can escape scope by argument
-	"mv": true, "cp": true, "tee": true,
+	"mv": true, "cp": true,
 }
 
 // ClassifyCommand returns the class and resolved program name for a single
-// command line, using cwd for the Windows cwd-shadowing check. Program is
-// empty when the command cannot be tokenized.
-//
-// Two rules keep the "safe" verdict honest:
-//
-//  1. A first token containing a path separator or ~ is never classified by
-//     its base name: ./cat.bat is not cat, /usr/bin/ls is not verified to be
-//     ls. Path form means CmdUnrecognized, so it lands behind approval.
-//  2. On Windows, even a bare name resolves from the working directory
-//     first (cmd.exe/PATHEXT semantics), so `cat` can execute a planted
-//     ./cat.bat. When cwd is known and a same-named executable exists there
-//     — or cannot be ruled out — the command is CmdUnrecognized. When cwd is
-//     not declared, a bare name cannot be verified either; Windows commands
-//     without a declared cwd never classify as safe.
+// command line, using cwd for the Windows cwd-shadowing check.
 func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 	trimmed := strings.TrimSpace(cmd)
 	if trimmed == "" {
 		return CmdUnrecognized, ""
 	}
 	if strings.ContainsAny(trimmed, shellMetachars) {
-		// Compound, redirected or dynamic: cannot be vouched for.
 		return CmdUnrecognized, ""
 	}
 	fields := strings.Fields(trimmed)
@@ -123,7 +151,7 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 		return CmdUnrecognized, ""
 	}
 	if strings.ContainsAny(prog, `/\`) || strings.HasPrefix(prog, "~") {
-		// Path form: never vouched for by base name (rule 1).
+		// Path form: never vouched for by base name.
 		return CmdUnrecognized, baseName(prog)
 	}
 	prog = strings.TrimSuffix(prog, ".exe")
@@ -133,7 +161,8 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 		return CmdUnrecognized, ""
 	}
 
-	// Windows cwd-first resolution (rule 2).
+	// Windows cwd-first resolution: a bare name can execute a planted
+	// ./name.bat from the working directory before PATH is consulted.
 	if runtime.GOOS == "windows" {
 		if cwd == "" {
 			return CmdUnrecognized, prog
@@ -143,11 +172,30 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 		}
 	}
 
+	args := fields[1:]
+
 	if subs, ok := subcommandReadOnlyPrograms[prog]; ok {
-		sub := firstNonFlag(fields[1:])
-		if subs[strings.ToLower(sub)] {
+		// A pure flag form listed in the table (npm --version) is safe on its
+		// own; the subcommand scan below only sees positional tokens.
+		if len(args) == 1 && subs[strings.ToLower(strings.Trim(args[0], `"'`))] {
 			return CmdSafe, prog
 		}
+		sub, rest, ok := findSubcommand(fields[1:], valueFlags[prog])
+		if !ok {
+			// Unverifiable flag structure before the subcommand.
+			return CmdSensitive, prog
+		}
+		if !subs[strings.ToLower(sub)] {
+			return CmdSensitive, prog
+		}
+		if hasOutputFlag(args) {
+			return CmdSensitive, prog
+		}
+		_ = rest
+		return CmdSafe, prog
+	}
+	if hasOutputFlag(args) {
+		// A would-be read-only program carrying an output-redirecting flag.
 		return CmdSensitive, prog
 	}
 	if readOnlyPrograms[prog] {
@@ -159,6 +207,167 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 	return CmdUnrecognized, prog
 }
 
+// findSubcommand scans tokens after the program name for the first positional
+// token, skipping flags. Known value-taking flags consume the next token;
+// any other flag that is not a plain boolean demotes the command because it
+// might have swallowed the subcommand. ok=false means unverifiable.
+func findSubcommand(fields []string, value map[string]bool) (sub string, rest []string, ok bool) {
+	for i := 0; i < len(fields); i++ {
+		tok := strings.Trim(fields[i], `"'`)
+		if tok == "" {
+			continue
+		}
+		if !strings.HasPrefix(tok, "-") {
+			return tok, fields[i+1:], true
+		}
+		name := tok
+		if idx := strings.IndexByte(name, '='); idx >= 0 {
+			name = name[:idx]
+		}
+		if value[name] {
+			if idx := strings.IndexByte(tok, '='); idx >= 0 {
+				continue // value attached with '='
+			}
+			if strings.HasPrefix(tok, "--") {
+				// Long flag without '=': its value is the next token.
+				i++
+			} else if len(tok) > 2 {
+				// Short flag with attached value, e.g. -Cdir.
+				continue
+			} else {
+				i++ // separate value token
+			}
+			continue
+		}
+		if strings.HasPrefix(tok, "--") {
+			// An unrecognized long flag may or may not take a value; without
+			// knowing, the following token cannot be trusted as the
+			// subcommand.
+			return "", nil, false
+		}
+		// Unknown short flags (-p, -n, …) are assumed boolean; they cannot
+		// hide a value in the curated programs both flags precede nothing.
+		// Treat a lone "-" as positional.
+		if tok == "-" {
+			return tok, fields[i+1:], true
+		}
+		continue
+	}
+	return "", nil, false
+}
+
+// hasOutputFlag reports whether any argument matches an output-redirecting
+// flag. Matching is by prefix so -o=x, -oFILE, --output=x and -exec=x are all
+// caught.
+func hasOutputFlag(args []string) bool {
+	for _, a := range args {
+		t := strings.Trim(a, `"'`)
+		for _, f := range outputFlags {
+			if t == f || strings.HasPrefix(t, f+"=") {
+				return true
+			}
+			if strings.HasPrefix(f, "-") && !strings.HasPrefix(f, "--") && strings.HasPrefix(t, f) && !strings.HasPrefix(t, "--") {
+				// Short flags catch attached values too (-oFILE).
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// AnalyzeSafeCommandPaths inspects the arguments of a command that would be
+// classified CmdSafe and reports the first path-like argument that resolves
+// outside the scope roots, plus whether any path-like argument could not be
+// resolved at all.
+//
+// Program-level classification alone would let a curated read-only program
+// escape containment through its arguments ("cat C:/outside/secret" reads a
+// file the file.read policy would have denied). The caller resolves this the
+// same way file actions are resolved: outside → deny, unverifiable → ask.
+func AnalyzeSafeCommandPaths(cmd, cwd string, roots []string) (outside string, unverifiable bool) {
+	fields := strings.Fields(strings.TrimSpace(cmd))
+	if len(fields) < 2 {
+		return "", false
+	}
+	for _, tok := range fields[1:] {
+		t := strings.Trim(tok, `"'`)
+		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, "-") {
+			// A flag: an attached value after '=' can still be a path.
+			if i := strings.IndexByte(t, '='); i >= 0 {
+				if isPathLike(t[i+1:]) {
+					if res := resolveArg(t[i+1:], cwd); res != "" {
+						if !domain.PathWithinRoots(roots, res) {
+							return res, false
+						}
+					} else {
+						return "", true
+					}
+				}
+				continue
+			}
+			// A short flag with an attached path value (-f/outside/x) cannot
+			// be split reliably.
+			if strings.ContainsAny(t, `/\`) {
+				return "", true
+			}
+			continue
+		}
+		if !isPathLike(t) {
+			// A bare word (a subcommand, a pattern, a version tag): resolved
+			// against the cwd it stays inside the working tree.
+			if cwd == "" {
+				continue
+			}
+			res := domain.NormalizePath(t, cwd)
+			if !domain.PathWithinRoots(roots, res) {
+				return res, false
+			}
+			continue
+		}
+		res := resolveArg(t, cwd)
+		if res == "" {
+			return "", true
+		}
+		if !domain.PathWithinRoots(roots, res) {
+			return res, false
+		}
+	}
+	return "", false
+}
+
+// isPathLike reports whether a token names a filesystem location.
+func isPathLike(t string) bool {
+	if t == "." || t == ".." || strings.HasPrefix(t, "~") {
+		return true
+	}
+	if strings.ContainsAny(t, `/\`) {
+		return true
+	}
+	// Drive-letter form, C:x.
+	if len(t) >= 2 && t[1] == ':' {
+		c := t[0]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveArg resolves a path-like argument against the cwd; "" when it cannot
+// be resolved (no cwd for a relative argument).
+func resolveArg(arg, cwd string) string {
+	if domain.IsAbsoluteNormalized(domain.NormalizePath(arg, "")) {
+		return domain.NormalizePath(arg, "")
+	}
+	if cwd == "" {
+		return ""
+	}
+	return domain.NormalizePath(arg, cwd)
+}
+
 // ExtractProgram returns the base program name of a command line for the
 // action's digest fields. It deliberately performs no trust classification.
 func ExtractProgram(cmd string) string {
@@ -166,7 +375,7 @@ func ExtractProgram(cmd string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	p := strings.ToLower(strings.Trim(fields[0], `"'`))
+	p := strings.ToLower(strings.Trim(fields[0], `"'"`))
 	return baseName(p)
 }
 
@@ -192,21 +401,6 @@ func programShadowedInCwd(prog, cwd string) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// firstNonFlag returns the first token not starting with '-' or '/', lowercased
-// and quote-trimmed. Git-style global flags ("-C dir") are skipped, but a flag
-// that swallows its value ("-C", "-c") before a subcommand yields "", which
-// classifies as sensitive — the conservative direction.
-func firstNonFlag(fields []string) string {
-	for _, f := range fields {
-		f = strings.Trim(f, `"'`)
-		if f == "" || strings.HasPrefix(f, "-") || strings.HasPrefix(f, "/") {
-			continue
-		}
-		return f
-	}
-	return ""
 }
 
 // CommandReasons produces the structured reasons for a classified command, so
