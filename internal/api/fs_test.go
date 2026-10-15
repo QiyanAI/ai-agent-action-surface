@@ -72,8 +72,15 @@ func TestFSListDirsOnlyAndAuth(t *testing.T) {
 	if names["secret.txt"] {
 		t.Fatal("a file appeared in a directories-only listing")
 	}
-	if got := body["path"].(string); got != domain.NormalizePath(base, "") {
-		t.Fatalf("path = %q, want normalized %q", got, domain.NormalizePath(base, ""))
+	// The API answers with the physically resolved directory (EvalSymlinks),
+	// which also expands 8.3 short names like RUNNER~1 — resolve the
+	// expectation the same way instead of comparing raw spellings.
+	resolved, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body["path"].(string); got != domain.NormalizePath(resolved, "") {
+		t.Fatalf("path = %q, want resolved %q", got, domain.NormalizePath(resolved, ""))
 	}
 }
 
