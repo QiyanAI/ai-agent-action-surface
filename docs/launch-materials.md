@@ -1,0 +1,203 @@
+# R04 launch materials (Public Beta v0.3.0-beta.1)
+
+**Status: prepared, not published.** Nothing in this repository posts itself
+anywhere. External posting happens only when the maintainer — a human — does
+it, under that community's own rules. These are drafts for that use.
+
+Everything below follows the claim boundary in
+[scope-and-claims.md](scope-and-claims.md); if any phrasing here ever
+contradicts the code or that boundary, the boundary wins and this file is
+wrong.
+
+---
+
+## 1. One-line description (any channel, EN)
+
+> **Qiyan — Your AI Team. Your Rules.** A local, open platform for running AI
+> agents under pre-execution control: connect Claude Code, watch a small agent
+> team work, and approve or block every sensitive action *before* it runs.
+
+## 2. 一句话描述（中文，任意渠道）
+
+> **Qiyan —— 你的 AI 团队，你的规则。** 本地优先的开放平台：用执行前控制运行
+> AI Agents——接入 Claude Code，看小队干活，敏感行动在**执行之前**由你批准或
+> 拦截。
+
+## 3. Short blurb (~60 words, GitHub Release / community posts)
+
+Qiyan connects to your Claude Code projects and puts a real gate in front of
+what agents do. A Planner, a Builder and a Reviewer run as three real sessions;
+every shell command, deletion, credential use and out-of-scope path stops and
+asks you first. Decisions are recorded with evidence, what is *not* protected
+is stated plainly, and an open local API lets other tools ask the same
+question before they act. Local-first, no account, no telemetry. Apache-2.0.
+
+### 简短介绍（中文）
+
+Qiyan 接入你的 Claude Code 项目，把真正的门禁放在 Agent 行动之前。策划员、
+开发员、检查员是三个真实会话；每一条 Shell 命令、删除、凭据使用与越界路径
+都会停下先问你。每个决策都带证据记录，**没有**被保护的部分如实写明；开放、
+本地的 API 让其他软件也能在行动前问同一个问题。本地优先、无需账号、无遥测。
+Apache-2.0。
+
+## 4. Medium post (~150 words, tech communities / dev forums)
+
+**Your AI team. Your rules.**
+
+AI agents are becoming coworkers — but most tooling asks you to trust first and
+audit later. Qiyan is a local-first counterpart: connect your existing Claude
+Code setup, hand a goal to a three-agent crew (planner → builder → reviewer),
+and watch a console where every sensitive action **stops before it runs**. Shell
+commands always wait for your approval. An out-of-scope write is denied with a
+reason in plain words. Each decision is recorded with machine-stable evidence,
+and the console shows coverage per path: `ENFORCED`, `OBSERVED`, `UNCOVERED`,
+`UNKNOWN` — including the honest `UNVERIFIED` cases. There is no OS-sandbox
+claim, no cloud, no account and no telemetry. Developers can put the same
+decision point in front of their own agent host through the open
+[Open Control Contract](developer-api.md): *may I do this?* → allow, deny, or
+wait for one human approval.
+
+Try it (no account, 60-second demo): [Releases
+download](https://github.com/QiyanAI/ai-agent-action-surface/releases) ·
+[repository](https://github.com/QiyanAI/ai-agent-action-surface) ·
+[install guide](install.md). It is an early-access Beta — stated plainly, not
+a production security certification.
+
+### 中等长度（中文
+
+**你的 AI 团队，你的规则。**
+
+AI Agent 正在成为同事——但多数工具让你先信任、后审计。Qiyan 是本地优先的
+另一条路：接入你现有的 Claude Code，把目标交给三角色小队（策划 → 开发 →
+检查），在控制台里看每一个敏感行动**在执行前停下**。Shell 命令一律等待你的
+批准；越界写入会带通俗原因被拒绝。每个决策都以机器稳定的证据记录，控制台
+按路径显示覆盖状态：`ENFORCED`、`OBSERVED`、`UNCOVERED`、`UNKNOWN`——诚实的
+未验证同样在内。没有操作系统沙箱的宣称，不上云、无账号、无遥测。开发者可以
+通过开放的[开放控制契约](developer-api.zh-CN.md)把同一个决策点放进自己的
+Agent Host：*我可以做这件事吗？* → 允许、拒绝、或等待一次人工批准。
+
+立即体验（无需账号，60 秒演示）：[Releases
+下载](https://github.com/QiyanAI/ai-agent-action-surface/releases) ·
+[仓库](https://github.com/QiyanAI/ai-agent-action-surface) ·
+[安装指南](install.md)。这是早期体验 Beta——如实说明，不是生产级安全认证。
+
+## 5. Three core use cases (the demos)
+
+The three reproducible cases behind every version of this copy — with exact
+commands and what you will see — live in [demos.md](demos.md):
+
+- **Demo A — Your AI Team.** One goal; three real sessions; a sensitive action
+  waits for your decision. *AI actually works for you — and you stay in
+  control.*
+- **Demo B — Before It Acts.** An out-of-bounds action meets the gate and does
+  not run, with the reason in plain words. *Safety is not a scan report — it is
+  control before the action.*
+- **Demo C — Build With Qiyan.** The independent reference host integrates via
+  the public API only: allow / deny / approval / stop-when-service-is-down.
+  *Other developers can use Qiyan as their open control layer.*
+
+演示的可复现步骤（真实运行、真实记录）见 [demos.md](demos.md)。
+
+## 6. GitHub Release notes (draft for the maintainer to attach)
+
+> **Qiyan v0.3.0-beta.1 — Early Access / Beta / NOT PRODUCTION-CERTIFIED**
+>
+> The first public Beta of Qiyan, an open Agent Mission & Control platform.
+> Download the file for your platform below (windows/amd64, linux/amd64,
+> linux/arm64, darwin/amd64, darwin/arm64), verify it with `SHA256SUMS` and
+> `gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`, and
+> run `qiyan serve` → open the console → **Try the demo** (no account needed,
+> 60 seconds, nothing real runs).
+>
+> **What it does:** connect Claude Code projects, run a three-role agent crew
+> under pre-execution control, approve or deny every sensitive action before
+> it runs, keep every decision with evidence, and integrate other tools via
+> the open Control Contract.
+>
+> **What it is not:** not a production security certification; not an OS
+> sandbox; not a claim over paths that bypass the Control API; only Claude
+> Code is a supported runtime (fail-closed on 2.1.295+, measured per machine).
+> Binaries are unsigned — SmartScreen/Gatekeeper will warn; do not disable
+> those warnings for other software. Shell commands always wait for your
+> approval. Full boundary: docs/scope-and-claims.md.
+>
+> **First run:** put the file in a folder you will keep *before* connecting
+> any project — moving it later fails the gate closed. Install, verify and
+> uninstall: docs/install.md. Known limitations: that page's "Known
+> limitations" section. Security reports: SECURITY.md (private channel, no
+> public issues).
+>
+> Apache-2.0. No account, no telemetry, nothing sent to any Qiyan service.
+> When you connect Claude Code, model traffic goes to Anthropic under its own
+> terms.
+
+## 7. Boundary block — include (verbatim or linked) in every channel
+
+Required by R04-09 in any copy used publicly; keep this block together:
+
+- Qiyan's own control service runs locally (loopback); it uploads nothing to
+  any Qiyan service. When you connect Claude Code, its model calls go to
+  Anthropic under Anthropic's own network and data-handling terms.
+- Qiyan is **not an operating-system sandbox**.
+- Only **Claude Code** is a supported runtime today.
+- **Shell commands always wait for your approval.**
+- Paths not covered by the integration are **not claimed as protected** — the
+  coverage table says what is actually enforced.
+- **Beta is not a production security certification.**
+
+## 8. Release-day checklist (maintainer actions; Claude Code does not do these)
+
+1. Merge the R04 PR (normal maintainer flow; CI must be green).
+2. Dispatch **Candidate Build** on `main` with `flavor: beta`,
+   `version_label: 0.3.0-beta.1`; wait for the run; download the artifact.
+3. Verify: `sha256sum -c SHA256SUMS`, `gh attestation verify` (each binary),
+   run the Windows binary once (`serve` + console + demo).
+4. Create tag `v0.3.0-beta.1` on the exact commit the build ran from
+   (the run's `HEAD SHA` — shown in the run and bound in every attestation).
+5. Create the Release with those five files + `SHA256SUMS` + `LICENSE.txt` +
+   `CANDIDATE-LABEL.txt`, pasting the §6 notes (adjust dates/links only).
+6. **Then** apply the README swap below (docs/install.md needs the same swap
+   in its blockquote and its "Where to get it" sentence).
+
+### README release-day swap
+
+Replace, in `README.md` (and the parallel spot in `README.zh-CN.md`):
+
+> "the **v0.3.0-beta.1 Public Beta** builds … are prepared and awaiting the
+> maintainer's release authorization; when they ship they appear on
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)."
+
+with:
+
+> "**Download v0.3.0-beta.1** for your platform (windows/amd64, linux/amd64,
+> linux/arm64, darwin/amd64, darwin/arm64) from
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) —
+> checksums, the Apache-2.0 license and build provenance are attached."
+
+(中文对应段落同步替换为「**下载 v0.3.0-beta.1**（五个平台，附校验和、Apache-2.0
+许可与构建来源证明）：[Releases](…)。」) And delete the "awaiting … release
+authorization" clause in the `### Get the build` blockquote and in
+`docs/install.md`, replacing it with "**Download from Releases:** …".
+
+## 9. Contribution and license entry (every channel)
+
+Repository: <https://github.com/QiyanAI/ai-agent-action-surface> ·
+Contributing: [CONTRIBUTING.md](../CONTRIBUTING.md) (issues first; guided
+forms; `good first issue` / `help wanted` labels mark the small work) ·
+License: **Apache-2.0** · Security: [SECURITY.md](../SECURITY.md) (private
+reporting — never a public issue) ·
+开发者入口：Issues 引导表单（含 Agent Runtime Adapter Request）与
+[CONTRIBUTING.md](../CONTRIBUTING.md)。
+
+## 10. Channel notes
+
+- **GitHub Release:** §6 notes + §7 boundary; assets + checksums + provenance
+  attached (R04-04 set).
+- **Tech communities / dev forums:** §3 or §4 text; link the repository and
+  `docs/install.md`; include §7 (or link it if the platform allows).
+- **AI-Agent communities:** lead with Demo A/B/C; the contract section of §4;
+  keep the Beta wording.
+- **What is forbidden:** buying placement, mass DMs/emails, fake accounts or
+  reviews, and any phrasing from the banned list in
+  `.github/claims-banned.txt`. Posting is a maintainer action; this file never
+  posts itself.
