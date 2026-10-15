@@ -275,18 +275,95 @@ func TestPlanStepsParsing(t *testing.T) {
 	}
 }
 
+// blockingRunner holds the first session turn until released, so a test can
+// keep a run deterministically in the live state instead of racing the
+// scheduler.
+type blockingRunner struct {
+	fake    fakeRunner
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingRunner) Start(ctx context.Context, prompt string) (SessionResult, error) {
+	select {
+	case <-b.started:
+	default:
+		close(b.started)
+	}
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return SessionResult{}, ctx.Err()
+	}
+	return b.fake.Start(ctx, prompt)
+}
+
+func (b *blockingRunner) Resume(ctx context.Context, prompt string) (SessionResult, error) {
+	return b.fake.Resume(ctx, prompt)
+}
+
 func TestRunRegistryRejectsDoubleRun(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	br := &blockingRunner{
+		fake: fakeRunner{script: []SessionResult{
+			{FinalText: "Approach.\n```json\n[\"create report.md\"]\n```"},
+			{FinalText: "Done: created report.md"},
+			{FinalText: "```json\n{\"verdict\": \"OK\", \"issues\": []}\n```"},
+		}},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return br
+	}
+
 	r := NewRunRegistry()
-	o := &Orchestrator{}
-	mid := domain.NewMissionID()
-	// A zero orchestrator would fail instantly, which is fine: the registry's
-	// job is to refuse the second start while the first is live.
-	ok1, err := r.Start(mid, o)
+	ok1, err := r.Start(m.ID, o)
 	if err != nil || !ok1 {
 		t.Fatalf("first start: %v %v", ok1, err)
 	}
-	ok2, err := r.Start(mid, o)
+	// The first run is deterministically live: its first session turn is
+	// blocked until we release it.
+	select {
+	case <-br.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached its first session turn")
+	}
+	ok2, err := r.Start(m.ID, o)
 	if err != nil || ok2 {
 		t.Fatalf("second start must be refused while running: %v %v", ok2, err)
+	}
+	close(br.release)
+	// Let the run reach a terminal state before the test exits; a run
+	// goroutine must never outlive the store it writes to.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		s, found := r.Status(m.ID)
+		if found && s.State != "running" {
+			if s.State != "completed" {
+				t.Fatalf("scripted run state = %s (%s), want completed", s.State, s.Summary)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run did not reach a terminal state")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestRunWithNoStoreFailsInsteadOfPanicking(t *testing.T) {
+	// A storeless orchestrator must fail visibly instead of panicking inside
+	// the run goroutine, which would kill the whole process.
+	o := &Orchestrator{}
+	if _, err := o.Run(context.Background(), domain.NewMissionID()); err == nil {
+		t.Fatal("a storeless orchestrator must return an error")
 	}
 }

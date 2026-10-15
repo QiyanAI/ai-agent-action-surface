@@ -117,6 +117,10 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		return status, nil
 	}
 
+	if o.Store == nil {
+		return status, fmt.Errorf("mission: orchestrator has no store")
+	}
+
 	m, found, err := o.Store.GetMission(missionID)
 	if err != nil {
 		return status, err
