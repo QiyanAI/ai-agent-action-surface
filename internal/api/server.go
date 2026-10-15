@@ -115,6 +115,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/decisions", s.handleDecisions)
 	s.mux.HandleFunc("GET /v1/coverage", s.handleCoverage)
 
+	// Playground (synthetic scenarios).
+	s.mux.HandleFunc("GET /v1/playground/scenarios", s.handlePlaygroundScenarios)
+
 	// Safety Lab.
 	s.mux.HandleFunc("POST /v1/lab/scan", s.handleLabScan)
 	s.mux.HandleFunc("POST /v1/lab/apply", s.handleLabApply)
