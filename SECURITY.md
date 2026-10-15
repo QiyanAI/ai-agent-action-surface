@@ -16,6 +16,20 @@ public issue for a suspected vulnerability.**
 If you are unsure whether something is a vulnerability, report it privately
 anyway. Reports that turn out not to be vulnerabilities are still welcome.
 
+## 安全漏洞报告（中文）
+
+通过本仓库的 GitHub 私密漏洞报告渠道提交：
+
+**<https://github.com/QiyanAI/ai-agent-action-surface/security/advisories/new>**
+
+也可以从仓库的 **Security** 选项卡进入 **Report a vulnerability**。
+
+该渠道仅在您与维护者之间可见。**请不要为疑似漏洞开公开 Issue。**
+不确定是否算漏洞时，仍请私下报告；最终不是漏洞的报告同样欢迎。
+
+这是一个单维护者项目，没有付费安全团队：确认与修复是尽力而为的，
+**没有漏洞赏金**。报告中不要包含真实凭证、个人数据或第三方数据。
+
 ## What is in scope
 
 The attack surface today includes, specifically:
@@ -59,8 +73,9 @@ goodwill in both directions.
 
 ## Supported versions
 
-No version of this project has been released as a product. R03 early-access
-candidates are test builds only (`EARLY ACCESS / TEST BUILD /
-NOT PRODUCTION-CERTIFIED`): there is nothing to patch on a supported-version
-basis yet. Reports are nonetheless welcome — the feedback is most useful at
-this stage.
+No version of this project has been released as a product. Early-access builds
+— the R03 test candidates and the v0.3.0-beta.1 Public Beta once it ships — are
+signalled `EARLY ACCESS / NOT PRODUCTION-CERTIFIED`: they are not production
+certified, carry no support or compatibility promise, and there is no
+supported-version patch policy yet. Reports are nonetheless welcome — the
+feedback is most useful at this stage.

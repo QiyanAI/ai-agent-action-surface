@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/QiyanAI/ai-agent-action-surface/security/advisories/new
+    about: Do not open a public issue for a suspected vulnerability — use GitHub's private reporting.
+  - name: Control API and contract documentation
+    url: https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/developer-api.md
+    about: Everything an agent host needs to integrate before opening an adapter request.
+  - name: What Qiyan does and does not claim
+    url: https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/scope-and-claims.md
+    about: The exact boundary — check here before filing a feature request.
