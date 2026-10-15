@@ -74,23 +74,35 @@ func missionPayload(m domain.Mission) MissionPayload {
 
 // TaskPayload is one task.
 type TaskPayload struct {
-	ID        string    `json:"id"`
-	MissionID string    `json:"missionId"`
-	Role      string    `json:"role"`
-	Title     string    `json:"title"`
-	State     string    `json:"state"`
-	AgentID   string    `json:"agentId,omitempty"`
-	StepsUsed int       `json:"stepsUsed"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID        string            `json:"id"`
+	MissionID string            `json:"missionId"`
+	Role      string            `json:"role"`
+	Title     string            `json:"title"`
+	State     string            `json:"state"`
+	AgentID   string            `json:"agentId,omitempty"`
+	StepsUsed int               `json:"stepsUsed"`
+	Artifacts []ArtifactPayload `json:"artifacts,omitempty"`
+	CreatedAt time.Time         `json:"createdAt"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+// ArtifactPayload is one file a role actually produced (derived from ALLOWed
+// decisions, never from prose).
+type ArtifactPayload struct {
+	Path        string `json:"path"`
+	Description string `json:"description,omitempty"`
 }
 
 func taskPayload(t domain.Task) TaskPayload {
-	return TaskPayload{
+	p := TaskPayload{
 		ID: string(t.ID), MissionID: string(t.MissionID), Role: string(t.Role),
 		Title: t.Title, State: string(t.State), AgentID: string(t.AgentID),
 		StepsUsed: t.StepsUsed, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
+	for _, a := range t.Artifacts {
+		p.Artifacts = append(p.Artifacts, ArtifactPayload{Path: a.Path, Description: a.Description})
+	}
+	return p
 }
 
 // ApprovalPayload is what the UI and CLI render a pending decision from. It

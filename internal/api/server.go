@@ -133,10 +133,27 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/connect/apply", s.handleConnectApply)
 	s.mux.HandleFunc("GET /v1/connect", s.handleConnectList)
 	s.mux.HandleFunc("DELETE /v1/connect", s.handleConnectRemove)
+	s.mux.HandleFunc("GET /v1/detect/claude", s.handleDetectClaude)
+
+	// Project selection (folder browsing and one-folder creation for the
+	// picker; directories only, state dir refused — see fs.go).
+	s.mux.HandleFunc("GET /v1/fs/list", s.handleFSList)
+	s.mux.HandleFunc("POST /v1/fs/mkdir", s.handleFSMkdir)
 
 	// UI session bootstrap and the embedded console pages.
 	s.mux.HandleFunc("POST /v1/ui/session", s.handleUISession)
 	s.uiRoutes()
+}
+
+// extendWriteDeadline raises the response write deadline for handlers whose
+// work legitimately outlives the server's WriteTimeout: the enforcement probe
+// and the lab verify run real Claude Code sessions (bounded by their own
+// context timeouts, up to ~5 minutes). Without this, the transport would cut
+// the response while the probe is still working. Requires net/http's
+// ResponseController support (plain loopback HTTP/1.1 always provides it).
+func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Now().Add(d))
 }
 
 // --- middleware ---

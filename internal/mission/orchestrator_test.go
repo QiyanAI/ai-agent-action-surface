@@ -275,18 +275,232 @@ func TestPlanStepsParsing(t *testing.T) {
 	}
 }
 
+// blockingRunner holds the first session turn until released, so a test can
+// keep a run deterministically in the live state instead of racing the
+// scheduler.
+type blockingRunner struct {
+	fake    fakeRunner
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingRunner) Start(ctx context.Context, prompt string) (SessionResult, error) {
+	select {
+	case <-b.started:
+	default:
+		close(b.started)
+	}
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return SessionResult{}, ctx.Err()
+	}
+	return b.fake.Start(ctx, prompt)
+}
+
+func (b *blockingRunner) Resume(ctx context.Context, prompt string) (SessionResult, error) {
+	return b.fake.Resume(ctx, prompt)
+}
+
 func TestRunRegistryRejectsDoubleRun(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	br := &blockingRunner{
+		fake: fakeRunner{script: []SessionResult{
+			{FinalText: "Approach.\n```json\n[\"create report.md\"]\n```"},
+			{FinalText: "Done: created report.md"},
+			{FinalText: "```json\n{\"verdict\": \"OK\", \"issues\": []}\n```"},
+		}},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return br
+	}
+
 	r := NewRunRegistry()
-	o := &Orchestrator{}
-	mid := domain.NewMissionID()
-	// A zero orchestrator would fail instantly, which is fine: the registry's
-	// job is to refuse the second start while the first is live.
-	ok1, err := r.Start(mid, o)
+	ok1, err := r.Start(m.ID, o)
 	if err != nil || !ok1 {
 		t.Fatalf("first start: %v %v", ok1, err)
 	}
-	ok2, err := r.Start(mid, o)
+	// The first run is deterministically live: its first session turn is
+	// blocked until we release it.
+	select {
+	case <-br.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached its first session turn")
+	}
+	ok2, err := r.Start(m.ID, o)
 	if err != nil || ok2 {
 		t.Fatalf("second start must be refused while running: %v %v", ok2, err)
+	}
+	close(br.release)
+	// Let the run reach a terminal state before the test exits; a run
+	// goroutine must never outlive the store it writes to.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		s, found := r.Status(m.ID)
+		if found && s.State != "running" {
+			if s.State != "completed" {
+				t.Fatalf("scripted run state = %s (%s), want completed", s.State, s.Summary)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run did not reach a terminal state")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestRunWithNoStoreFailsInsteadOfPanicking(t *testing.T) {
+	// A storeless orchestrator must fail visibly instead of panicking inside
+	// the run goroutine, which would kill the whole process.
+	o := &Orchestrator{}
+	if _, err := o.Run(context.Background(), domain.NewMissionID()); err == nil {
+		t.Fatal("a storeless orchestrator must return an error")
+	}
+}
+
+func TestRunCancelYieldsCancelledState(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	br := &blockingRunner{fake: fakeRunner{}, started: make(chan struct{}), release: make(chan struct{})}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return br
+	}
+
+	r := NewRunRegistry()
+	ok, err := r.Start(m.ID, o)
+	if err != nil || !ok {
+		t.Fatalf("start: %v %v", ok, err)
+	}
+	select {
+	case <-br.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached its first session turn")
+	}
+	if !r.Cancel(m.ID) {
+		t.Fatal("cancel of a live run must succeed")
+	}
+	// The blocked session observes the cancellation; the run must end as
+	// cancelled, not as a failure.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		s, found := r.Status(m.ID)
+		if found && s.State != "running" {
+			if s.State != "cancelled" {
+				t.Fatalf("run state = %s (%s), want cancelled", s.State, s.Summary)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run did not reach a terminal state")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	got, _, _ := st.GetMission(m.ID)
+	if got.State != domain.MissionCancelled {
+		t.Fatalf("mission state = %s, want CANCELLED", got.State)
+	}
+	tasks, _ := st.TasksForMission(m.ID)
+	for _, task := range tasks {
+		if task.Role == domain.RolePlanner && task.State != domain.TaskCancelled {
+			t.Fatalf("planner task state = %s, want CANCELLED", task.State)
+		}
+	}
+}
+
+func TestRunFailsWhenSessionsReportErrors(t *testing.T) {
+	// Regression (adversarial review finding 10): a session that ends with the
+	// runtime's own error flag (is_error:true — auth expiry, model failure)
+	// must fail the role. It used to be treated as a successful turn, so a
+	// run where every session errored still reported "completed".
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	fake := &fakeRunner{script: []SessionResult{
+		{FinalText: "API Error: upstream model unavailable", IsError: true, ExitCode: 1},
+	}}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return fake
+	}
+	status, err := o.Run(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf("run-level error is reported through the status: %v", err)
+	}
+	if status.State != "failed" || !strings.Contains(status.Summary, "error result") {
+		t.Fatalf("state=%s summary=%q, want failed with an error-result summary", status.State, status.Summary)
+	}
+	got, _, _ := st.GetMission(m.ID)
+	if got.State != domain.MissionFailed {
+		t.Fatalf("mission state = %s, want FAILED", got.State)
+	}
+}
+
+func TestCancelDuringApprovalWaitCancelsPendingApproval(t *testing.T) {
+	// Regression (adversarial review finding 11): cancelling while the run
+	// waits for a decision used to leave the approval PENDING and approvable
+	// for a dead run.
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeCompanion)
+
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		r := &approvalRunner{o: o, mission: m, role: role}
+		if role == domain.RoleBuilder {
+			r.agent, r.task = agent, task
+		}
+		return r
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan RunStatus, 1)
+	go func() {
+		st2, _ := o.Run(ctx, m.ID)
+		done <- st2
+	}()
+
+	// Wait until the builder's approval is pending, then cancel.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		pend, err := st.ListApprovals(domain.ApprovalPending, "")
+		if err == nil && len(pend) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no approval appeared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	status := <-done
+	if status.State != "cancelled" {
+		t.Fatalf("run state = %s (%s), want cancelled", status.State, status.Summary)
+	}
+	left, _ := st.ListApprovals(domain.ApprovalPending, "")
+	if len(left) != 0 {
+		t.Fatalf("%d approval(s) still pending after a cancelled run", len(left))
 	}
 }

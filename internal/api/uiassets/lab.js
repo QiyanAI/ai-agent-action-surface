@@ -1,13 +1,27 @@
-// Safety Lab: scan a supported input, read the evidence behind every
-// finding, preview a suggestion, apply it, and watch a real verification run
-// decide whether the change actually holds.
+// Safety Lab: scan a supported input, read what every finding means in
+// plain words (technical evidence one column away), preview a suggestion's
+// exact change, apply it, and watch a real verification run decide whether
+// the change actually holds. Scanning itself only reads files.
 "use strict";
 
 const labState = { lastScan: null, lastApply: null };
 
 function levelBadge(level) {
   const cls = level === "ENFORCED" ? "ok" : level === "UNKNOWN" ? "bad" : "warn";
-  return el("span", { class: "badge " + cls }, level);
+  const known = t("lab_level_" + level);
+  return el("span", { class: "badge " + cls }, known === "lab_level_" + level ? level : known);
+}
+
+// plainMeaning answers "what can it do, and why care" in one line, from the
+// capability and evidence-level vocabularies only.
+function plainMeaning(f) {
+  const cap = t("lab_cap_" + f.capability);
+  const lvl = t("lab_level_" + f.level);
+  return cap + " · " + lvl;
+}
+
+function notifyTour(name) {
+  if (typeof Tour !== "undefined" && Tour.notify) Tour.notify(name);
 }
 
 async function runScan() {
@@ -21,9 +35,11 @@ async function runScan() {
     result = await api("POST", "/v1/lab/scan", { kind: kind, path: path });
   } catch (e) {
     out.append(el("div", { class: "notice bad" }, e.message));
+    out.append(el("p", { class: "muted" }, t("lab_notfound_hint")));
     return;
   }
   labState.lastScan = result;
+  rememberProject(path);
 
   const card = el("div", { class: "card" });
   card.append(el("h3", {}, result.inputKind + " — " + result.inputPath));
@@ -32,11 +48,13 @@ async function runScan() {
 
   const table = el("table", {});
   table.append(el("tr", {},
-    el("th", {}, t("th_subject")), el("th", {}, t("th_capability")),
+    el("th", {}, t("th_subject")), el("th", {}, t("lab_what_means")),
+    el("th", {}, t("th_capability")),
     el("th", {}, t("th_evidence")), el("th", {}, t("th_source")), el("th", {}, t("th_not_covered"))));
   for (const f of result.findings || []) {
     table.append(el("tr", {},
       el("td", {}, f.subject),
+      el("td", {}, plainMeaning(f)),
       el("td", { class: "mono" }, f.capability),
       el("td", {}, levelBadge(f.level)),
       el("td", { class: "mono" }, f.sourceRef),
@@ -53,6 +71,7 @@ async function runScan() {
   }
   out.append(card);
   renderSuggestions(result);
+  notifyTour("scan-done");
 }
 
 function renderSuggestions(result) {
@@ -70,14 +89,38 @@ function renderSuggestions(result) {
       card.append(el("a", { class: "go", href: "connect.html" }, t("lab_open_wizard")));
     } else if (s.autoApply && s.kind === "add-deny-rule") {
       card.append(el("p", { class: "mono" }, (s.addDenyRules || []).join(", ")));
-      const btn = el("button", { class: "primary" }, t("lab_preview_apply"));
-      btn.addEventListener("click", () => applySuggestion(s, btn));
+      const btn = el("button", { class: "primary" }, t("lab_preview"));
+      btn.addEventListener("click", () => previewSuggestion(s, card));
       card.append(el("div", { class: "row" }, btn));
     } else {
       card.append(el("p", { class: "badge warn" }, t("lab_advisory")));
     }
     out.append(card);
   }
+}
+
+// previewSuggestion shows the exact planned change before anything is
+// written, then offers the real apply.
+async function previewSuggestion(s, card) {
+  const projectDir = document.getElementById("scan-path").value.trim();
+  const previewBox = el("div", {});
+  card.append(previewBox);
+  let resp;
+  try {
+    resp = await api("POST", "/v1/lab/apply", { projectDir: projectDir, suggestionId: s.id, preview: true });
+  } catch (e) {
+    previewBox.append(el("div", { class: "notice bad" }, e.message));
+    return;
+  }
+  clear(previewBox);
+  previewBox.append(el("p", {}, t("lab_planned_changes") + ":"));
+  for (const ch of resp.changes || []) previewBox.append(el("p", { class: "mono" }, ch));
+  previewBox.append(el("p", { class: "mono muted" }, t("connect_settings_file") + ": " + (resp.settingsPath || "")));
+  const apply = el("button", { class: "primary" }, t("lab_apply_now"));
+  const cancel = el("button", {}, t("lab_cancel_preview"));
+  cancel.addEventListener("click", () => previewBox.remove());
+  apply.addEventListener("click", () => applySuggestion(s, apply));
+  previewBox.append(el("div", { class: "row" }, apply, cancel));
 }
 
 async function applySuggestion(s, btn) {
@@ -117,6 +160,7 @@ async function applySuggestion(s, btn) {
     });
     card.append(el("div", { class: "row" }, undo));
     out.append(card);
+    notifyTour("apply-done");
   } catch (e) {
     out.append(el("div", { class: "notice bad" }, e.message));
     btn.disabled = false;
@@ -135,12 +179,26 @@ async function applySuggestion(s, btn) {
     el("option", { value: "claude-project" }, t("lab_inputs_claude")),
     el("option", { value: "manifest" }, t("lab_inputs_manifest")),
     el("option", { value: "mcp-json" }, t("lab_inputs_mcp")));
-  const path = el("input", { type: "text", id: "scan-path", placeholder: "D:/work/my-project" });
-  const go = el("button", { class: "primary" }, t("lab_inspect"));
+  const pathRow = el("div", { class: "row" });
+  const path = el("input", { type: "text", id: "scan-path", placeholder: "D:/work/my-project", class: "flex1" });
+  const pickWrap = el("span", { id: "scan-path-pick" });
+  pathRow.append(path, pickWrap);
+  const go = el("button", { class: "primary", id: "lab-run" }, t("lab_inspect"));
   go.addEventListener("click", () => runScan());
   card.append(
     el("div", { class: "field" }, el("label", {}, t("lab_pick")), kind),
-    el("div", { class: "field" }, el("label", {}, t("lab_path")), path),
+    el("div", { class: "field" }, el("label", {}, t("lab_path")), pathRow),
     el("div", { class: "row" }, go));
   area.append(card, el("div", { id: "scan-result" }), el("div", { id: "scan-suggestions" }), el("div", { id: "apply-result" }));
+
+  // The folder picker only applies to directory scans; file kinds keep a
+  // plain path field.
+  pickWrap.append(pickerButton(path, {}));
+  const syncPicker = () => {
+    pickWrap.classList.toggle("hidden", kind.value !== "claude-project");
+  };
+  kind.addEventListener("change", syncPicker);
+  syncPicker();
+
+  if (typeof Tour !== "undefined") Tour.init("lab");
 })();

@@ -103,8 +103,8 @@ function showShareCard(container, stats) {
   const svg = shareCardSVG(stats);
   const blob = new Blob([svg], { type: "image/svg+xml" });
   const url = URL.createObjectURL(blob);
-  const preview = el("img", { src: url, alt: "share card preview", style: "max-width:100%;border:1px solid var(--line);border-radius:12px" });
-  const save = el("button", { class: "primary" }, "Save the card (.svg)");
+  const preview = el("img", { src: url, alt: "share card preview", class: "share-preview" });
+  const save = el("button", { class: "primary" }, t("share_save"));
   save.addEventListener("click", () => {
     const a = document.createElement("a");
     a.href = url;

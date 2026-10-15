@@ -139,7 +139,7 @@ function renderStep(st) {
     play.stats.steps++;
     if (st.action.effect === "allowed") play.stats.allowed++;
     if (st.action.effect === "blocked") play.stats.blocked++;
-    const card = el("div", { class: "card", style: "margin:6px 0 10px 24px" });
+    const card = el("div", { class: "card indent" });
     card.append(el("div", { class: "spread" },
       el("span", { class: "mono" }, st.action.tool + " → " + st.action.target),
       effectBadge(st.action.effect)));
@@ -149,7 +149,7 @@ function renderStep(st) {
 
     if (st.decision) {
       const dec = st.decision;
-      const box = el("div", { class: "approval", style: "margin-left:24px" });
+      const box = el("div", { class: "approval indent-left" });
       box.append(el("div", { class: "q" }, langText(dec.questionEn, dec.questionZh)));
       const row = el("div", { class: "row" });
       const mk = (label, text, followup, count) => {

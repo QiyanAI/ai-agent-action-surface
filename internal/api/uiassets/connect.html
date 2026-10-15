@@ -17,15 +17,23 @@
   <h1 data-i18n="connect_title"></h1>
   <p class="lead" data-i18n="connect_lead"></p>
 
+  <p class="muted" id="cc-status"></p>
+
   <div class="card">
     <div class="field">
       <label data-i18n="connect_project"></label>
-      <input type="text" id="project" placeholder="D:/work/my-project">
+      <div class="row">
+        <input type="text" id="project" placeholder="D:/work/my-project" class="flex1">
+        <span id="project-pick"></span>
+      </div>
     </div>
-    <div class="field">
-      <label data-i18n="connect_claude_bin"></label>
-      <input type="text" id="claude-bin" placeholder="(default: from PATH)">
-    </div>
+    <details class="block">
+      <summary data-i18n="connect_advanced"></summary>
+      <div class="field mt10">
+        <label data-i18n="connect_claude_bin"></label>
+        <input type="text" id="claude-bin" placeholder="(default: from PATH)">
+      </div>
+    </details>
     <div class="row">
       <button id="preview" class="primary" data-i18n="connect_preview"></button>
     </div>
@@ -39,6 +47,8 @@
 </main>
 <script src="i18n.js"></script>
 <script src="app.js"></script>
+<script src="tour.js"></script>
+<script src="picker.js"></script>
 <script src="connect.js"></script>
 </body>
 </html>

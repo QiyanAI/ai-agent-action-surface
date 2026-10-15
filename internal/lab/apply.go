@@ -205,8 +205,74 @@ var verifyProbes = map[string]struct {
 	},
 }
 
-// VerifyDenyRule attempts the probe command under the project's settings and
-// reports whether Claude Code refused it. claudeBin may be empty (PATH).
+// verifyLeg is the outcome of one controlled probe session.
+type verifyLeg struct {
+	ran      bool // the command's effect was observed (or the transcript said DONE)
+	refused  bool // the runtime refused the command (transcript markers)
+	complete bool // the session produced an interpretable result at all
+	text     string
+	why      string // when complete is false
+}
+
+// runVerifyLeg runs one headless session asking for the probe command, under
+// an explicit settings file, with the command pre-allowed so the only
+// differentiator between the two legs of a comparison is the deny rule.
+func runVerifyLeg(ctx context.Context, binary, workDir, settingsPath, allowTool, prompt string) verifyLeg {
+	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, binary,
+		"-p", "--output-format", "json",
+		"--permission-mode", "default",
+		// User-level baseline only, so nothing else in the project masks the
+		// result; the probe command itself is pre-allowed — the comparison
+		// between the two legs is then attributable to the rule alone.
+		"--setting-sources", "user",
+		"--allowedTools", allowTool,
+		"--settings", settingsPath,
+		prompt)
+	cmd.Dir = workDir
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	runErr := cmd.Run()
+	text := out.String()
+	ok, why := sessionCompleted(runErr, text)
+	return verifyLeg{
+		complete: ok,
+		why:      why,
+		text:     text,
+		refused:  strings.Contains(text, "BLOCKED") || strings.Contains(text, `"permission_denials":[{`),
+	}
+}
+
+// verdictFor decides verified/refused from the two legs. Verified requires
+// ALL of: without the rule the command really ran; with the rule the runtime
+// produced an explicit refusal; and the command's effect was absent. Anything
+// else is indeterminate and must not be recorded as protection.
+func verdictFor(rule string, control, guarded verifyLeg, controlRan, guardedRan, guardedRefused bool) (bool, string) {
+	if !control.complete {
+		return false, "the no-rule control run was indeterminate (" + control.why + "); the rule's effect could not be isolated"
+	}
+	if !guarded.complete {
+		return false, "the with-rule run was indeterminate (" + guarded.why + "); the rule's effect was not confirmed"
+	}
+	if !controlRan {
+		return false, "without the rule the command did not run in this environment, so the rule's effect could not be isolated"
+	}
+	if guardedRan {
+		return false, "the command ran even with the rule present — the rule did not refuse it on this machine"
+	}
+	if !guardedRefused {
+		return false, "the with-rule run produced no explicit refusal of the command; the rule's effect was not confirmed"
+	}
+	return true, ""
+}
+
+// VerifyDenyRule proves a deny rule by controlled comparison on this machine:
+// the same harmless command is attempted once with the rule absent (it must
+// run) and once with the rule present (it must be refused). A single run can
+// never prove a rule — a headless session may refuse the command for reasons
+// that have nothing to do with the rule. claudeBin may be empty (PATH).
 func VerifyDenyRule(ctx context.Context, projectDir, claudeBin, rule string) (VerifyResult, error) {
 	probe, ok := verifyProbes[rule]
 	if !ok {
@@ -217,47 +283,77 @@ func VerifyDenyRule(ctx context.Context, projectDir, claudeBin, rule string) (Ve
 	if err != nil {
 		return VerifyResult{}, domain.NewError(domain.ErrControlUnavailable, "no Claude Code to verify with: %v", err)
 	}
-	dir, err := os.MkdirTemp("", "qiyan-verify-")
+	controlDir, err := os.MkdirTemp("", "qiyan-verify-control-")
 	if err != nil {
 		return VerifyResult{}, err
 	}
-	defer os.RemoveAll(dir)
-	if rule == "Bash(rm:*)" {
-		if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("scratch\n"), 0o600); err != nil {
-			return VerifyResult{}, err
+	defer os.RemoveAll(controlDir)
+	guardedDir, err := os.MkdirTemp("", "qiyan-verify-guarded-")
+	if err != nil {
+		return VerifyResult{}, err
+	}
+	defer os.RemoveAll(guardedDir)
+	for _, dir := range []string{controlDir, guardedDir} {
+		if rule == "Bash(rm:*)" {
+			if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("scratch\n"), 0o600); err != nil {
+				return VerifyResult{}, err
+			}
 		}
 	}
+	controlSettings := filepath.Join(controlDir, "qiyan-control-settings.json")
+	if err := os.WriteFile(controlSettings, []byte("{\"permissions\":{\"deny\":[]}}\n"), 0o600); err != nil {
+		return VerifyResult{}, err
+	}
 
+	program := probe.command
+	if i := strings.IndexByte(program, ' '); i >= 0 {
+		program = program[:i]
+	}
+	allowTool := "Bash(" + program + ":*)"
 	prompt := fmt.Sprintf("Use the Bash tool to run exactly this command once: %s — then reply with one word: DONE if the command succeeded, or BLOCKED if it was blocked.", probe.command)
-	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(runCtx, det.Binary,
-		"-p", "--output-format", "json",
-		"--permission-mode", "default",
-		// The project's settings file, applied directly; user-level baseline
-		// only, so nothing else in the project masks the result.
-		"--setting-sources", "user",
-		"--settings", settingsPathFor(projectDir),
-		prompt)
-	cmd.Dir = dir
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	_ = cmd.Run()
 
-	text := out.String()
+	control := runVerifyLeg(ctx, det.Binary, controlDir, controlSettings, allowTool, prompt)
+	guarded := runVerifyLeg(ctx, det.Binary, guardedDir, settingsPathFor(projectDir), allowTool, prompt)
+
+	var controlRan, guardedRan, guardedRefused bool
 	switch rule {
 	case "Bash(curl:*)":
-		blocked := strings.Contains(text, "BLOCKED") || !strings.Contains(text, "DONE")
-		return VerifyResult{Rule: rule, Verified: blocked,
-			Evidence: fmt.Sprintf("probe with %s on %s: %s", det.Version, probe.command, firstWords(text, 160)),
-			Note:     probe.harmless}, nil
+		// No filesystem effect to observe: the transcript markers are the
+		// signal, and the refusal marker must be explicit.
+		controlRan = control.complete && strings.Contains(control.text, "DONE") && !control.refused
+		guardedRan = guarded.complete && !guarded.refused && strings.Contains(guarded.text, "DONE")
 	default:
-		blocked := probe.check(dir)
-		return VerifyResult{Rule: rule, Verified: blocked,
-			Evidence: fmt.Sprintf("probe with %s: the matching command was %s", det.Version, map[bool]string{true: "refused", false: "allowed"}[blocked]),
-			Note:     probe.harmless}, nil
+		controlRan = control.complete && !probe.check(controlDir)
+		guardedRan = guarded.complete && !probe.check(guardedDir)
 	}
+	guardedRefused = guarded.complete && guarded.refused && !guardedRan
+	verified, why := verdictFor(rule, control, guarded, controlRan, guardedRan, guardedRefused)
+	evidence := fmt.Sprintf("controlled comparison with %s: without the rule %q %s; with the rule %q %s",
+		det.Version, probe.command,
+		map[bool]string{true: "ran", false: "did not run"}[controlRan],
+		probe.command,
+		map[bool]string{true: "also ran", false: "was refused"}[guardedRan])
+	if !verified {
+		return VerifyResult{Rule: rule, Verified: false, Evidence: evidence, Note: why}, nil
+	}
+	return VerifyResult{Rule: rule, Verified: true, Evidence: evidence, Note: probe.harmless}, nil
+}
+
+// sessionCompleted reports whether the verification session produced a
+// result that may be interpreted. A failed run, an empty result, or a result
+// the runtime itself marked as an error (is_error:true — e.g. auth or model
+// failures) is indeterminate, not evidence that the rule blocked anything.
+func sessionCompleted(runErr error, text string) (bool, string) {
+	if runErr != nil {
+		return false, "the verification session failed: " + runErr.Error()
+	}
+	if strings.TrimSpace(text) == "" {
+		return false, "the verification session produced no result"
+	}
+	if strings.Contains(text, `"is_error":true`) {
+		return false, "the verification session reported an error result"
+	}
+	return true, ""
 }
 
 // --- helpers ---

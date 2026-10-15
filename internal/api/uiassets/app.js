@@ -53,7 +53,11 @@ async function ensureSession(mainEl) {
   if (k) {
     try {
       await bootstrapSession(k);
-      history.replaceState(null, "", location.pathname);
+      // Strip only the one-time key; deep-link parameters (?mission=, ?tour=)
+      // must survive the sign-in.
+      params.delete("k");
+      const qs = params.toString();
+      history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
     } catch (e) {
       renderBootstrap(mainEl, e.message);
       return false;
@@ -125,6 +129,15 @@ function fmtTime(iso) {
   return d.toLocaleTimeString();
 }
 
+// tf formats a translated string, replacing {name} placeholders with values.
+function tf(key, params) {
+  let s = t(key);
+  for (const [k, v] of Object.entries(params || {})) {
+    s = s.split("{" + k + "}").join(String(v));
+  }
+  return s;
+}
+
 // Top navigation, shared by every page.
 function renderTop(active) {
   const nav = document.getElementById("topnav");
@@ -142,6 +155,12 @@ function renderTop(active) {
     if (active === key) a.className = "active";
     nav.append(a);
   }
+  // Help entry: the three guided tours, reopenable at any time.
+  const help = el("button", { type: "button", id: "help-btn" }, t("help_button"));
+  help.addEventListener("click", () => {
+    if (typeof openHelp === "function") openHelp();
+  });
+  nav.append(help);
 }
 
 // reasonLine renders the structured reasons in the current language. The

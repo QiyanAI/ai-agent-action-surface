@@ -11,8 +11,11 @@ name: Release Drill
 # It is dispatch-only and never triggers on pull_request, so code proposed by a
 # contributor can never reach the write-capable job below.
 #
-# Permissions are split from ci.yml on purpose: ci.yml is read-only, and the
-# write, OIDC and attestation grants exist only here and only for this drill.
+# Permissions are split from ci.yml on purpose: ci.yml is read-only. The
+# write grant exists only here; the OIDC and attestation grants exist here
+# and (without any write grant) in candidate-build.yml, the artifacts-only
+# early-access build. The two dispatch-only workflows are the entire
+# release-shaped surface.
 on:
   workflow_dispatch:
     inputs:
@@ -125,9 +128,16 @@ jobs:
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Dispatch inputs are attacker-influenced text; pass through env and
+          # validate before any shell use.
+          DRILL_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          gh release create "${{ inputs.tag }}" \
+          case "$DRILL_TAG" in
+            v[A-Za-z0-9._-][A-Za-z0-9._-]*) ;;
+            *) echo "tag must start with v and contain only [A-Za-z0-9._-]" >&2; exit 1 ;;
+          esac
+          gh release create "$DRILL_TAG" \
             --repo "${{ github.repository }}" \
             --draft \
             --prerelease \

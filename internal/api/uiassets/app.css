@@ -112,3 +112,61 @@ textarea { min-height: 90px; resize: vertical; }
 .approval { border: 1px solid var(--warn); border-radius: var(--radius); background: var(--panel); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .approval .q { font-weight: 600; }
 kbd { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+
+/* Project picker (picker.js): compact panel with connected projects,
+   recents, a folder browser and a one-folder workspace creator. */
+.picker-panel { margin-top: 8px; gap: 10px; max-height: 420px; overflow: auto; }
+.picker-section { display: flex; flex-direction: column; gap: 4px; }
+.picker-section > div:first-child { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.picker-row {
+  display: flex; align-items: center; gap: 10px; justify-content: flex-start;
+  width: 100%; text-align: left; padding: 7px 10px;
+}
+.picker-row:hover { border-color: var(--accent); }
+.picker-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-crumb { justify-content: space-between; }
+.picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
+.chip { font-size: 13px; padding: 5px 10px; border-radius: 999px; }
+
+/* Guided tours (tour.js): a bottom card that highlights the real control for
+   each step. The highlight is a non-destructive outline. */
+.tour-card {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px)); z-index: 40;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); gap: 10px;
+}
+.tour-text { font-size: 15px; }
+.tour-wait { font-size: 13px; }
+.tour-hl {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+  border-radius: 10px; transition: outline-color 0.2s;
+}
+#help-panel {
+  position: fixed; right: 18px; top: 64px; width: min(420px, calc(100vw - 32px));
+  z-index: 41; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+header.top #help-btn { margin-left: 4px; }
+
+/* Outcome-first summary card on Mission Control. */
+.card.summary { border-width: 2px; border-color: var(--accent); }
+details.block { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--panel); }
+details.block > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.block pre { margin: 8px 0 4px; }
+
+/* Utilities. The console CSP is style-src 'self', which makes markup
+   style="..." attributes inactive in browsers; visibility and trivial
+   layout must therefore be expressed as classes (registered last so they
+   win over component display rules), never inline styles. */
+.hidden { display: none; }
+.flex1 { flex: 1; }
+.flex2 { flex: 2; }
+.mt10 { margin-top: 10px; }
+.mt12 { margin-top: 12px; }
+.mt18 { margin-top: 18px; }
+.mt20 { margin-top: 20px; }
+.small { font-size: 12px; }
+.indent { margin: 6px 0 10px 24px; }
+.indent-left { margin-left: 24px; }
+.demo-card { margin-top: 18px; border-color: var(--demo); }
+.demo-go { background: var(--demo); }
+.share-preview { max-width: 100%; border: 1px solid var(--line); border-radius: 12px; }

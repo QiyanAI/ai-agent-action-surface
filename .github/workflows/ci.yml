@@ -2,8 +2,10 @@ name: CI
 
 # Pull requests, pushes to main and manual dispatches only. This workflow holds
 # read-only permissions by design: nothing here may write to the repository,
-# publish a release, or reach a production credential. Release capability lives
-# solely in release-drill.yml, which is dispatch-only.
+# publish a release, or reach a production credential. Release-shaped
+# capability lives solely in the two dispatch-only workflows: release-drill.yml
+# (the sanctioned draft-release drill) and candidate-build.yml (early-access
+# test candidates; artifacts only, never a Release).
 on:
   push:
     branches: [main]

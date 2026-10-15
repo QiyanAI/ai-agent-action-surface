@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -117,6 +118,10 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		return status, nil
 	}
 
+	if o.Store == nil {
+		return status, fmt.Errorf("mission: orchestrator has no store")
+	}
+
 	m, found, err := o.Store.GetMission(missionID)
 	if err != nil {
 		return status, err
@@ -149,6 +154,12 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "planning the mission"})
 	planText, err := o.runRole(ctx, m, planner, plannerTask, plannerPrompt(m, workdir), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(plannerTask.ID)
+			o.setStateTask(plannerTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user during planning")
+		}
 		o.setStateTask(plannerTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "planner session failed: "+err.Error())
@@ -163,11 +174,18 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "building per the plan"})
 	builderText, err := o.runRole(ctx, m, builder, builderTask, builderPrompt(m, workdir, planText), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(builderTask.ID)
+			o.setStateTask(builderTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user while building; actions already allowed remain in the audit trail")
+		}
 		o.setStateTask(builderTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "builder session failed: "+err.Error())
 	}
 	o.recordBuilderArtifacts(builderTask)
+	status.Artifacts = o.artifactPaths(builderTask)
 	o.setStateTask(builderTask, domain.TaskCompleted)
 	o.emit(Event{Kind: "role-end", Role: string(domain.RoleBuilder), TaskID: builderTask.ID,
 		Text: "build complete"})
@@ -178,6 +196,12 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "reviewing the result"})
 	reviewText, err := o.runRole(ctx, m, reviewer, reviewerTask, reviewerPrompt(m, workdir, builderText), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(reviewerTask.ID)
+			o.setStateTask(reviewerTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user during review")
+		}
 		o.setStateTask(reviewerTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "reviewer session failed: "+err.Error())
@@ -217,6 +241,9 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 	if err != nil {
 		return "", err
 	}
+	if res.IsError {
+		return "", fmt.Errorf("session reported an error result: %s", firstWords(res.FinalText, 140))
+	}
 	final := res.FinalText
 
 	for resumes := 0; resumes < o.MaxResumes; resumes++ {
@@ -245,6 +272,9 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 					agent.Name, raised.Action.Kind, raised.Action.DisplayTarget())})
 			decision, err = o.waitForDecision(ctx, raised.ID)
 			if err != nil {
+				// A run that dies while an approval is being awaited must not
+				// leave that approval pending and approvable for a dead run.
+				o.cancelPending(task.ID)
 				return final, err
 			}
 		}
@@ -260,7 +290,13 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 		turnStart = o.now()
 		res, err = runner.Resume(ctx, resumePrompt)
 		if err != nil {
+			// The turn may have raised a fresh approval before dying; a
+			// cancelled run must not leave it approvable.
+			o.cancelPending(task.ID)
 			return final, err
+		}
+		if res.IsError {
+			return final, fmt.Errorf("session reported an error result: %s", firstWords(res.FinalText, 140))
 		}
 		if res.FinalText != "" {
 			final = res.FinalText
@@ -464,6 +500,28 @@ func (o *Orchestrator) recordBuilderArtifacts(task domain.Task) {
 	t.Artifacts = arts
 	t.UpdatedAt = o.now()
 	_ = o.Store.PutTask(t)
+}
+
+// firstWords trims a session message for an error summary.
+func firstWords(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// artifactPaths re-reads the task's recorded artifacts for the run status.
+func (o *Orchestrator) artifactPaths(task domain.Task) []string {
+	t, found, err := o.Store.GetTask(task.ID)
+	if err != nil || !found {
+		return nil
+	}
+	var paths []string
+	for _, a := range t.Artifacts {
+		paths = append(paths, a.Path)
+	}
+	return paths
 }
 
 // --- prompts ---

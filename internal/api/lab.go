@@ -44,6 +44,7 @@ type labApplyReq struct {
 	ProjectDir   string `json:"projectDir"`
 	SuggestionID string `json:"suggestionId"`
 	ClaudeBin    string `json:"claudeBin,omitempty"`
+	Preview      bool   `json:"preview,omitempty"`
 }
 
 type labApplyResp struct {
@@ -52,6 +53,8 @@ type labApplyResp struct {
 	SettingsPath  string             `json:"settingsPath"`
 	BackupPath    string             `json:"backupPath"`
 	Verifications []lab.VerifyResult `json:"verifications"`
+	// Preview marks a dry-run response: the plan, and nothing written.
+	Preview bool `json:"preview,omitempty"`
 }
 
 func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +100,16 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if plan.NoChanges {
+		if req.Preview {
+			writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath, Preview: true})
+			return
+		}
 		writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath})
+		return
+	}
+	if req.Preview {
+		// A real preview: the exact diff that would be written, nothing else.
+		writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath, BackupPath: plan.BackupPath, Preview: true})
 		return
 	}
 	if err := lab.ApplyDenyPlan(plan); err != nil {
@@ -106,10 +118,16 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify each rule with a real, harmless probe and record the outcome.
+	// The probes run real Claude Code sessions and outlive the ordinary
+	// WriteTimeout by design.
 	resp := labApplyResp{Applied: suggestion.AddDeny, Changes: plan.Changes,
 		SettingsPath: plan.SettingsPath, BackupPath: plan.BackupPath}
-	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	extendWriteDeadline(w, 10*time.Minute)
+	// Each rule is proven by a controlled comparison (with and without the
+	// rule): budget two probe sessions per rule.
+	ctx, cancel := context.WithTimeout(r.Context(), 9*time.Minute)
 	defer cancel()
+	projectScope := domain.NormalizePath(req.ProjectDir, "")
 	for _, rule := range suggestion.AddDeny {
 		vr, err := lab.VerifyDenyRule(ctx, req.ProjectDir, req.ClaudeBin, rule)
 		if err != nil {
@@ -125,7 +143,7 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 			basis = vr.Note
 		}
 		if err := s.Store.PutCoverage(domain.Coverage{
-			ID: domain.NewCoverageID(), Path: "claude-code/permission-deny/" + rule,
+			ID: domain.NewCoverageID(), Path: "claude-code/permission-deny/" + rule + " (" + projectScope + ")",
 			State: state, Basis: basis, CheckedAt: time.Now().UTC(),
 		}); err != nil {
 			fail(w, err)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/QiyanAI/ai-agent-action-surface/internal/connector"
 	"github.com/QiyanAI/ai-agent-action-surface/internal/domain"
@@ -56,6 +57,19 @@ func (s *Server) missionSettingsPath() (string, error) {
 	return path, nil
 }
 
+// readOptionalJSON decodes a request body strictly when one is present and
+// treats an empty body as absent (readJSON reports empty as INVALID_REQUEST).
+func readOptionalJSON(r *http.Request, dst any) error {
+	if r.Body == nil {
+		return nil
+	}
+	err := readJSON(r, dst)
+	if err != nil && strings.Contains(err.Error(), "request body is required") {
+		return nil
+	}
+	return err
+}
+
 func (s *Server) handleMissionRun(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireAuth(w, r, authOperator, authUISession); !ok {
 		return
@@ -71,8 +85,11 @@ func (s *Server) handleMissionRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req missionRunReq
-	if r.Body != nil {
-		_ = readJSON(r, &req) // body is optional for this endpoint
+	if err := readOptionalJSON(r, &req); err != nil {
+		// The body is optional, but when present it decodes strictly: a
+		// typo must never silently drop a field the caller intended.
+		fail(w, err)
+		return
 	}
 	claudeBin := req.ClaudeBin
 	if claudeBin == "" {
