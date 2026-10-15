@@ -1,4 +1,4 @@
-# Qiyan Control API — developer guide
+# Qiyan Open Control Contract — developer guide
 
 **Protocol version: v1 (contract revision 3, 2026-10).** The API is local,
 HTTP/JSON, and loopback-only. It is the same interface the Qiyan console, the
@@ -13,6 +13,27 @@ decoded **strictly** — any unknown JSON field is rejected with `400
 INVALID_REQUEST`, so a typo can never be silently dropped. Bodies are capped
 at 1 MiB. There is no protocol-negotiation handshake; the version is the `/v1`
 path segment, and this document names the revision.
+
+## The contract in five stages
+
+One loop, five stages — **Action → Risk & Evidence → Authorization →
+Enforcement → Outcome**. Every stage of the loop exists in the API today; the
+table maps each to where it lives, so an integrator can find the real thing,
+not a slogan:
+
+| Stage | What it means here | In this contract |
+| --- | --- | --- |
+| **Action** | The exact thing an agent proposes to do, with a trusted identity and context attached | `POST /v1/authorize` — identity comes from the bearer token + stored task (never the body); the `action` object names kind, tool and target; `contentDigest` binds written bytes |
+| **Risk & Evidence** | Why the engine reached its conclusion, in machine-stable terms | `reasons[]` `{code, params}` (25 declared codes); scope containment, role rules, approval classes and budgets are all decided server-side and recorded per decision in `GET /v1/decisions` |
+| **Authorization** | Who may approve what, for exactly how long, and for what | Operator-only `POST /v1/approvals/{id}/decision` (agents get `401`); the binding: one approval → at most one execution of the exact action (mission + task + agent + action digest + scope digest; 15-minute TTL; single-use; denied stays denied; scope change invalidates) |
+| **Enforcement** | The pre-execution point where the answer takes effect | On the Claude Code path: `POST /v1/hook/decide` — the tool call provably stops/starts at the gate, stamped `coverage: "ENFORCED"`. On a third-party host's path: **compliance is the host's code** — Qiyan answers, the host obeys, and the decision is `OBSERVED`. The contract draws this line instead of blurring it |
+| **Outcome** | What actually happened, paired with the decision | `POST /v1/events` (`executed` / `failed` / `blocked` / `cancelled`) with the same `actionDigest`; the audited trail is readable via `GET /v1/decisions?task=…`. Honest limits are in that section — there is no read-back yet, and digest pairing is the host's responsibility |
+
+And the part that belongs to every stage: **expressing what is NOT protected**
+— per-path `coverage` (`ENFORCED` / `OBSERVED` / `UNCOVERED` / `UNKNOWN`),
+`GET /v1/coverage` facts from real verification runs, deliberately no
+`protected: true` shortcut, and no claim at all about paths that bypass the
+API. See "Expressing what is NOT protected" below.
 
 ## Start here: the third-party runbook
 
@@ -127,6 +148,13 @@ transport succeeded; the answer is the body:
 An **approved retry still passes every structural check** (task state, scope,
 budgets, path containment). The approval is not a bypass; it resolves exactly
 one gate.
+
+**If the control service cannot be reached at all** — connection refused,
+timeout, any transport failure — **treat the action as denied and do not
+perform it.** A host must never fall back to running the action when it cannot
+ask. The reference host implements exactly this: an authorize failure ends it
+with an error before any action is attempted. This obligation is part of the
+contract, not a suggestion.
 
 ## Approvals and authorization binding
 
@@ -293,3 +321,42 @@ playground (`/v1/playground/scenarios`) exist for the local console and are
 **not** part of the third-party integration surface: they may change without a
 contract revision. The supported integration surface is exactly what this
 document describes.
+
+## Proposed extensions — not part of the contract yet
+
+These are directions the contract's own honest-limits sections point at. They
+are **not implemented**, are **not claimed**, and carry no timeline. They are
+recorded here so integrators can give feedback on them as proposals, not
+discover them as surprises:
+
+1. **Read-back for reported outcomes** — today `POST /v1/events` has no `GET`
+   counterpart (stated under "Reporting what actually happened"); a future
+   `GET /v1/events?task=…` would make the outcome trail directly auditable.
+2. **Server-side digest binding of results** — today the server accepts an
+   `actionDigest` without verifying it against a recorded decision; a future
+   revision could refuse unknown digests.
+3. **Cross-runtime adapter declarations** — today a runtime's capabilities
+   enter through the Control API declarations or the Safety Lab; a future
+   field could let an external adapter declare its integration surface
+   formally. (Runtimes: Claude Code is the only *supported* one; see the
+   ecosystem note below.)
+
+If you want one of these, open an issue describing your use case — proposals
+with a real integration behind them are the ones worth doing.
+
+## Building an adapter — the ecosystem invitation
+
+Any agent host can integrate against this contract without reading Qiyan's
+source: `POST /v1/authorize` before acting, obey the outcome, poll approvals,
+report with `POST /v1/events`. The bundled `cmd/qiyanhost` is the minimal
+worked example (standard library only, zero private imports).
+
+Adapters for other runtimes are welcome as **community work**. Before one can
+appear in any "supported" list, its author must have actually run it — real
+allow/deny/approval/fail-stop rounds against a real control service — and
+publish the compatibility evidence. Until then it is not supported, by
+anyone's announcement, including ours. To propose or announce one, open an
+**Agent runtime adapter request** in the issue tracker; security
+positive/negative examples and compatibility results are equally wanted.
+Ecosystem standing comes from real third-party adoption, not from this
+document declaring it.
