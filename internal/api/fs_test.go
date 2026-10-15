@@ -3,6 +3,7 @@ package api
 import (
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -23,6 +24,100 @@ func TestFSListDriveRoot(t *testing.T) {
 	}
 	if got := body["path"].(string); got != "D:/" {
 		t.Fatalf("drive root listed as %q, want D:/", got)
+	}
+}
+
+func TestFSStateDirAliasSpellingRefused(t *testing.T) {
+	// Regression (adversarial review finding 1): the refusal must compare the
+	// PHYSICALLY RESOLVED state directory, not only the configured spelling —
+	// otherwise a request under an alias spelling (symlink/junction ancestor,
+	// 8.3 short name, macOS /tmp) can list and create inside the state dir.
+	realState := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias-state")
+	if err := os.Symlink(realState, alias); err != nil {
+		if runtime.GOOS == "windows" {
+			// Junction fallback; works without developer mode.
+			if out, err2 := exec.Command("cmd", "/c", "mklink", "/J", alias, realState).CombinedOutput(); err2 != nil {
+				t.Skipf("cannot create a directory alias here: %v (%s)", err2, out)
+			}
+		} else {
+			t.Skipf("cannot create symlinks here: %v", err)
+		}
+	}
+
+	f := newAPIFixture(t)
+	f.api.StateDir = alias // configured under the alias spelling
+	if err := os.MkdirAll(filepath.Join(realState, "secret-dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Listing the resolved spelling of the state dir must be refused.
+	resp, _ := f.do(t, "GET", "/v1/fs/list?path="+url.QueryEscape(realState), f.opTok, nil, nil)
+	if resp.StatusCode != 403 {
+		t.Fatalf("resolved state dir listing: %d, want 403", resp.StatusCode)
+	}
+	// Creating inside the resolved spelling must be refused.
+	resp, _ = f.do(t, "POST", "/v1/fs/mkdir", f.opTok, map[string]any{"path": filepath.Join(realState, "created-through-alias")}, nil)
+	if resp.StatusCode != 403 {
+		t.Fatalf("mkdir through the resolved spelling: %d, want 403", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(realState, "created-through-alias")); err == nil {
+		t.Fatal("a folder was physically created inside the state directory")
+	}
+	// It must not be offered as a child of its parent either.
+	parent, body := f.do(t, "GET", "/v1/fs/list?path="+url.QueryEscape(filepath.Dir(realState)), f.opTok, nil, nil)
+	if parent.StatusCode == 200 {
+		if entries, ok := body["entries"].([]any); ok {
+			for _, e := range entries {
+				m, _ := e.(map[string]any)
+				if m["name"] == filepath.Base(realState) {
+					t.Fatal("the state directory appeared in its parent's listing")
+				}
+			}
+		}
+	}
+}
+
+func TestFSMkdirRefusesUnsafeNames(t *testing.T) {
+	f := newAPIFixture(t)
+	base := t.TempDir()
+	for _, name := range []string{"evil.", "evil ", "NUL", "CON", "com1.txt"} {
+		resp, _ := f.do(t, "POST", "/v1/fs/mkdir", f.opTok, map[string]any{"path": filepath.Join(base, name)}, nil)
+		if resp.StatusCode != 400 {
+			t.Fatalf("mkdir %q: %d, want 400", name, resp.StatusCode)
+		}
+	}
+	if entries, err := os.ReadDir(base); err != nil || len(entries) != 0 {
+		t.Fatalf("unsafe names must not create anything: %v %v", entries, err)
+	}
+}
+
+func TestFSNormalizeKeepsUNC(t *testing.T) {
+	// path.Clean collapses "//server/share" to "/server/share"; fsNormalize
+	// must restore the UNC form so Win32 resolves the share, not a local
+	// same-shaped path on the current drive.
+	if got := fsNormalize(`\\server\share\proj`); got != "//server/share/proj" {
+		t.Fatalf("UNC normalize = %q", got)
+	}
+	if !fsAbsolute("//server/share") {
+		t.Fatal("UNC form must be accepted as absolute")
+	}
+	if got := fsNormalize(`D:\`); got != "D:/" {
+		t.Fatalf("drive root normalize = %q", got)
+	}
+}
+
+func TestFSRootSlashRefusedOnWindows(t *testing.T) {
+	// The sibling validators (filepath.IsAbs in validateProject) reject "/"
+	// on Windows; the picker must agree with them.
+	if runtime.GOOS != "windows" {
+		t.Skip("the ambiguity is Windows-specific")
+	}
+	if fsAbsolute("/") {
+		t.Fatal(`"/" must not be accepted as an absolute picker path on Windows`)
+	}
+	if !fsAbsolute("D:/") || !fsAbsolute("//server/share") {
+		t.Fatal("drive roots and UNC forms stay absolute")
 	}
 }
 

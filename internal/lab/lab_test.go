@@ -247,3 +247,32 @@ func TestVerificationSessionMustComplete(t *testing.T) {
 		t.Fatalf("the reason must say the session reported an error: %q", why)
 	}
 }
+
+func TestDenyRuleVerdictRequiresControlledComparison(t *testing.T) {
+	ok := verifyLeg{complete: true, text: "…DONE…"}
+	refused := verifyLeg{complete: true, text: "…BLOCKED…", refused: true}
+	dead := verifyLeg{complete: false, why: "the verification session failed"}
+	chat := verifyLeg{complete: true, text: "I would rather not run that."}
+
+	// The honest positive: without the rule it ran, with it, refused.
+	if v, _ := verdictFor("Bash(rm:*)", ok, refused, true, false, true); !v {
+		t.Fatal("a controlled comparison with a real refusal must verify")
+	}
+	// The old defect's shape: the guarded leg was 'refused' only because the
+	// environment refuses the command regardless — the control leg shows it.
+	if v, why := verdictFor("Bash(rm:*)", refused, refused, false, false, true); v || !strings.Contains(why, "could not be isolated") {
+		t.Fatalf("a non-discriminating environment must not verify: %v %q", v, why)
+	}
+	if v, _ := verdictFor("Bash(rm:*)", dead, refused, false, false, true); v {
+		t.Fatal("an indeterminate control leg must not verify")
+	}
+	if v, _ := verdictFor("Bash(rm:*)", dead, dead, false, false, true); v {
+		t.Fatal("two indeterminate legs must not verify")
+	}
+	if v, why := verdictFor("Bash(rm:*)", ok, chat, true, false, false); v || !strings.Contains(why, "no explicit refusal") {
+		t.Fatalf("a chat-only guarded run must not verify: %v %q", v, why)
+	}
+	if v, why := verdictFor("Bash(rm:*)", ok, ok, true, true, false); v || !strings.Contains(why, "ran even with the rule") {
+		t.Fatalf("a rule that did not refuse must be reported: %v %q", v, why)
+	}
+}

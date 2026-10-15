@@ -29,7 +29,8 @@ qiyan mission create --goal "host demo" --root D:/scratch \
 qiyan task create --mission mi_… --role builder --agent ag_… --title "host work"
                                          # 4. a task whose agent IS your agent identity
 qiyan session bind --task ta_… --agent ag_… --session myhost-1
-                                         # 5. binding starts the task (READY → RUNNING)
+                                         # 5. binding starts the task (CREATED → RUNNING; the
+                                         #    READY state belongs to fleet-managed tasks)
 
 export AGENT_TOKEN=…                     # the token from step 2
 go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN \
@@ -78,7 +79,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
     "delegationTo": "ag_…",      // agent.delegation only (see below)
     "delegationTask": "ta_…",
     "delegationKind": "file.modify",
-    "raw": { }                   // optional, opaque; for your own audit display
+    "raw": "opaque string",      // optional; your own audit display (truncated to 200 chars)
   }
 }
 ```
@@ -143,8 +144,11 @@ Binding conditions, precisely:
 - **approval TTL: 15 minutes**; you may read `expiresAt` on the approval;
 - approving mints a single-use **authorization** (TTL 10 minutes) that is
   **claimed atomically on the retried call** — a concurrent double-retry
-  cannot execute twice; replay after the claim is refused
-  (`AUTHORIZATION_REPLAYED`/`authorization_replayed`);
+  cannot execute twice; a spent or unknown grant is **never silently
+  honored**: the retried call is re-evaluated by the engine and, if the
+  action is still gate-worthy, surfaced as a **fresh `REQUIRE_APPROVAL`**
+  (the engine re-asks instead of replaying — there is no distinct replay
+  refusal on the wire today);
 - a **denied action stays denied** for that task (reason `user_denied`); a
   **cancelled** approval can never be approved later (`approval_cancelled`);
 - an **expired** approval must be re-requested (a fresh gate evaluation);
@@ -196,7 +200,7 @@ The contract distinguishes observed from enforced, everywhere:
 ## Reason codes (stable identifiers)
 
 Reasons are `{ code, params }` — machine-stable, render at the edge. The
-vocabulary today (25 declared; the three marked *never emitted* describe
+vocabulary today (25 declared; the four marked *never emitted* describe
 states the engine does not currently produce — treat any appearance as a code
 to render generically):
 
@@ -215,7 +219,7 @@ to render generically):
 | `delegation_escalation` (`{what}`) | delegation would widen authority |
 | `user_approved` (`{approval}`) / `user_denied` | the human's decision on the retried action |
 | `approval_expired` / `approval_cancelled` / `action_changed` | grant no longer valid for this attempt |
-| `authorization_replayed` | the single-use grant was already spent |
+| `authorization_replayed` *never emitted* | declared vocabulary; a spent grant leads to a fresh gate evaluation instead (see the approvals section) |
 | `control_unavailable` (`{stage}`) | audit-or-deny: a decision that cannot be recorded is a denial |
 | `no_external_effect` | bookkeeping-only session action |
 | `mode_controlled_auto`, `mode_bounded_autonomy`, `path_not_covered` *never emitted* | declared vocabulary, not produced today |
@@ -246,7 +250,8 @@ GET  /v1/missions/{id}/run              # live event trail (in-memory; lost on r
                                         #   audited decision trail survives in GET /v1/decisions)
 POST /v1/missions/{id}/run/cancel       # stops the run; state becomes "cancelled"
 GET  /v1/decisions?task=…               # the audited trail
-GET  /v1/coverage, GET /v1/health       # enforcement facts / liveness (no auth, no data)
+GET  /v1/coverage                       # enforcement facts (operator/session — NOT unauthenticated)
+GET  /v1/health                         # liveness only (no auth, no data)
 ```
 
 ## Reference host
@@ -271,7 +276,10 @@ Map them in your UI; never parse `message`. HTTP status: `400`
 `INVALID_REQUEST` (incl. unknown fields, bad JSON, failed validation) ·
 `401` `UNKNOWN_IDENTITY` (missing/invalid credential) · `403`
 `IDENTITY_CONFLICT`, `AUTHORIZATION_BINDING`, `AUTHORIZATION_REPLAYED`,
-`OUT_OF_SCOPE` (loopback-host/CSRF refusals also use this class) · `404`
+`OUT_OF_SCOPE` — and two deliberate exceptions to the class→status table:
+the loopback-host/cross-origin refusals answer `403 INVALID_REQUEST`, and a
+missing/incorrect UI-session CSRF header answers `403 UNKNOWN_IDENTITY`;
+both are credential-shape refusals, not decisions · `404`
 `NOT_FOUND`, `APPROVAL_NOT_FOUND` · `409` `CONFLICT`, `APPROVAL_EXPIRED`,
 `APPROVAL_CANCELLED` · `503` `STORE_CORRUPTED`, `CONTROL_UNAVAILABLE` · `500`
 `INTERNAL` (plus `BUDGET_EXHAUSTED`, `TASK_CANCELLED`, `APPROVAL_REQUIRED`

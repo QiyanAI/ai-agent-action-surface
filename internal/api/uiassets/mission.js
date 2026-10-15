@@ -11,6 +11,8 @@ const state = {
   runLive: false,
   lastRun: null,
   lastDecisions: null,
+  summaryRendered: false,
+  root: "",
   eventsPrinted: 0,
 };
 
@@ -65,7 +67,7 @@ async function renderDetect() {
   }
   clear(line);
   if (data.found) {
-    line.append(tf("cc_found_plain", { version: data.version, tier: tierLabel(data.tierFromVersion) }));
+    line.append(tf("cc_found_plain", { version: data.version, tier: tierImpliedLabel(data.tierFromVersion) }));
   } else {
     line.append(t("cc_not_found") + " ");
     const a = el("a", { href: "https://claude.com/claude-code", target: "_blank", rel: "noreferrer" }, t("cc_install"));
@@ -159,6 +161,8 @@ async function refreshMission() {
   if (!state.missionId) return;
   const m = await api("GET", "/v1/missions/" + state.missionId);
   state.tasks = m.tasks || [];
+  const roots = (m.mission && m.mission.policy && m.mission.policy.scope && m.mission.policy.scope.roots) || [];
+  if (roots[0]) state.root = roots[0];
   const mstate = (m.mission && m.mission.state) || "";
   const stateEl = document.getElementById("state");
   stateEl.textContent = missionStateText(mstate);
@@ -166,10 +170,14 @@ async function refreshMission() {
   renderFleet();
   if (mstate === "COMPLETED" || mstate === "FAILED" || mstate === "CANCELLED") {
     showStopButton(false);
-    // A mission entered via deep link (no live page) still needs its decision
-    // trail before the outcome card can count anything.
-    if (!state.lastDecisions) await refreshMap();
-    await renderSummary();
+    if (!state.summaryRendered) {
+      // A mission entered via deep link (no live page) still needs its
+      // decision trail before the outcome card can count anything.
+      if (!state.lastDecisions) await refreshMap();
+      await renderSummary();
+      state.summaryRendered = true;
+    }
+    return false; // a terminal mission does not change; stop polling
   }
   return true;
 }
@@ -422,8 +430,10 @@ async function renderSummary() {
   }
 
   // Protection fact for the working folder, from measured coverage rows.
+  // The stored mission scope is the source of truth (a deep link or reload
+  // has no #root value); the input is only a fallback before first refresh.
   const rootInput = document.getElementById("root");
-  const root = (rootInput && rootInput.value.trim()) || (state.tasks[0] && "") || "";
+  const root = state.root || (rootInput && rootInput.value.trim()) || "";
   const cov = await coverageForRoot(root);
   if (cov) {
     card.append(el("p", {}, tf("summary_coverage", {

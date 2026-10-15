@@ -122,8 +122,10 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 	// WriteTimeout by design.
 	resp := labApplyResp{Applied: suggestion.AddDeny, Changes: plan.Changes,
 		SettingsPath: plan.SettingsPath, BackupPath: plan.BackupPath}
-	extendWriteDeadline(w, 5*time.Minute)
-	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	extendWriteDeadline(w, 10*time.Minute)
+	// Each rule is proven by a controlled comparison (with and without the
+	// rule): budget two probe sessions per rule.
+	ctx, cancel := context.WithTimeout(r.Context(), 9*time.Minute)
 	defer cancel()
 	projectScope := domain.NormalizePath(req.ProjectDir, "")
 	for _, rule := range suggestion.AddDeny {

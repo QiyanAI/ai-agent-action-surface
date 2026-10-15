@@ -90,7 +90,7 @@ async function doPreview() {
   );
   card.append(el("p", {}, t("connect_plan_plain")));
   card.append(el("p", { class: "mono" }, t("connect_settings_file") + ": " + (plan.settingsPath || "")));
-  card.append(el("p", { class: "muted" }, t("connect_tier_version") + ": " + tierLabel(det.TierFromVersion) +
+  card.append(el("p", { class: "muted" }, t("connect_tier_version") + ": " + tierImpliedLabel(det.TierFromVersion) +
     " · " + t("connect_floor") + ": " + (data.supportFloor || "")));
   card.append(techDetails(plan.changes || plan.Changes || []));
   if (plan.noChanges) {

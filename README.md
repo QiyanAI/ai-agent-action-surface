@@ -22,7 +22,8 @@ Everything is local-first: no account, no cloud, no telemetry. English and
   words, and its suggestions can be applied and *verified on your machine*.
 - **Put safety control into your own software.** Any agent host can ask
   Qiyan's open, local Control API before acting: `ALLOW` runs, `DENY` stops,
-  `REQUIRE_APPROVAL` waits for exactly one execution of exactly that action.
+  `REQUIRE_APPROVAL` waits for exactly one execution of exactly that tool call
+  (supply `contentDigest` to bind the written bytes too — see the contract).
 
 ## Understand it in 30 seconds
 
@@ -50,21 +51,26 @@ real observation.
 
 > **EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED.**
 > Candidates are unsigned, CGO-free test binaries for linux/amd64, linux/arm64,
-> darwin/amd64, darwin/arm64 and windows/amd64, published as workflow
-> artifacts of the dispatch-only **Candidate Build** action — never as a
-> GitHub Release, with no support or compatibility promise. Each comes with
-> `SHA256SUMS` and a build-provenance attestation binding it to the exact
-> commit (`gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`).
+> darwin/amd64, darwin/arm64 and windows/amd64, produced by the dispatch-only
+> **Candidate Build** workflow (Actions → Candidate Build) and published as
+> that run's downloadable workflow artifact — never as a GitHub Release, with
+> no support or compatibility promise. Ask the maintainer for a run link (only
+> users with write access can dispatch it). Each artifact set contains
+> `CANDIDATE-LABEL.txt` (the EARLY ACCESS marking travels with the files),
+> `SHA256SUMS`, and a build-provenance attestation binding each binary to its
+> exact commit (`gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`).
 > Windows SmartScreen and macOS Gatekeeper will warn on first run; there is no
 > signing. **Keep the binary where you put it** — connected projects point at
 > its absolute path, and moving or deleting it makes the gate fail closed and
 > block that project's tools. Full honesty about this channel:
 > [docs/scope-and-claims.md](docs/scope-and-claims.md).
 
-Then:
+Then run the file you extracted (the artifact keeps its full name; rename it
+to `qiyan` if you prefer):
 
 ```sh
-./qiyan serve     # prints the console address, the state dir and token paths
+./qiyan_0.3.0-r03-candidate_<os>_<arch> serve
+# prints the console address, the state dir and token paths
 ```
 
 Open the printed console address, paste the operator token from the token file

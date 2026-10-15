@@ -51,11 +51,21 @@ jobs:
           cache: false
 
       - name: Build candidates
+        env:
+          # Never substitute inputs into shell text: a dispatch input is
+          # attacker-influenced text, and GitHub expands expressions before
+          # bash parses the script (command substitution inside the value
+          # would execute). Passed through env and validated instead.
+          VERSION_INPUT: ${{ inputs.version_label }}
         run: |
           set -euo pipefail
           mkdir -p dist
 
-          version="${{ inputs.version_label }}"
+          version="$VERSION_INPUT"
+          if ! printf '%s' "$version" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{2,39}$'; then
+            echo "version_label must be 3-40 characters of [A-Za-z0-9._-]" >&2
+            exit 1
+          fi
           commit="${GITHUB_SHA}"
           built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -77,6 +87,22 @@ jobs:
 
             echo "built ${out}"
           done
+
+          # The label travels WITH the artifacts: separated from this page a
+          # candidate must still say what it is. (printf, not a heredoc: the
+          # YAML indentation would make a heredoc terminator unreachable.)
+          {
+            printf '%s\n' "EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED"
+            printf 'version: %s\n' "${version}"
+            printf 'commit:  %s\n' "${commit}"
+            printf 'built:   %s on %s\n' "${built}" "${RUNNER_OS}"
+            printf '%s\n' \
+              "This is an unsigned, CGO-free test build produced by the Candidate Build workflow." \
+              "It is not a product release, carries no support or compatibility promise," \
+              "and must stay at the path it is extracted to: installed Claude Code" \
+              "integrations point at the binary's absolute path, and moving or deleting" \
+              "it makes the gate fail closed."
+          } > CANDIDATE-LABEL.txt
 
       - name: Record artifact identity
         run: |

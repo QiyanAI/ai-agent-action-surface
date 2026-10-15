@@ -71,6 +71,15 @@ async function connectedInstallations() {
   }
 }
 
+// tierImpliedLabel describes what a VERSION STRING suggests. It must never
+// be phrased as a measurement - only a completed probe yields the measured
+// labels (tierLabel).
+function tierImpliedLabel(tier) {
+  if (tier === "enforced") return t("tier_implied_enforced");
+  if (tier === "blocking-only") return t("tier_implied_blocking");
+  return t("tier_implied_unsupported");
+}
+
 function tierLabel(tier) {
   if (tier === "enforced") return t("tier_enforced");
   if (tier === "blocking-only") return t("tier_blocking");
@@ -175,9 +184,11 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
     const crumb = el("div", { class: "row picker-crumb" });
     const upBtn = el("button", { type: "button" }, "↑ " + t("picker_up"));
     upBtn.addEventListener("click", () => {
-      const p = state.browse.replace(/\/+$/, "");
+      let p = state.browse.replace(/\/+$/, "");
       const idx = p.lastIndexOf("/");
-      state.browse = idx > 0 ? p.slice(0, idx) : p.slice(0, idx + 1);
+      p = idx > 0 ? p.slice(0, idx) : p.slice(0, idx + 1);
+      if (/^[A-Za-z]:$/.test(p)) p += "/"; // drive root keeps its slash
+      state.browse = p;
       renderPickerPanel(panel, inputEl, opts, state);
     });
     const useBtn = el("button", { type: "button", class: "primary" }, t("picker_use_this"));
@@ -191,6 +202,13 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
     try {
       const data = await api("GET", "/v1/fs/list?path=" + encodeURIComponent(state.browse));
       if (seq !== state.renderSeq) return;
+      if (data.path && data.path !== state.browse) {
+        // Adopt the server's canonical spelling (resolved path, drive-root
+        // slash) before anything can be selected with the local one.
+        state.browse = data.path;
+        renderPickerPanel(panel, inputEl, opts, state);
+        return;
+      }
       clear(listBox);
       for (const e of data.entries || []) {
         const row = el("button", { type: "button", class: "picker-row" });

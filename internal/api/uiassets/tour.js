@@ -105,7 +105,13 @@ const Tour = (() => {
     card.append(el("div", { class: "row" }, back, next, exit));
   }
 
+  function pageFromBody() {
+    const map = { nav_team: "mission", nav_lab: "lab", nav_dev: "dev" };
+    return map[document.body.getAttribute("data-page")] || "";
+  }
+
   function run() {
+    if (!TOURS[page]) page = pageFromBody(); // Help can start a tour before init
     if (!TOURS[page]) return;
     steps = TOURS[page];
     idx = 0;

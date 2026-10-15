@@ -155,6 +155,7 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 	planText, err := o.runRole(ctx, m, planner, plannerTask, plannerPrompt(m, workdir), &status)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(plannerTask.ID)
 			o.setStateTask(plannerTask, domain.TaskCancelled)
 			o.setMissionState(m, domain.MissionCancelled)
 			return end("cancelled", "run cancelled by the user during planning")
@@ -174,6 +175,7 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 	builderText, err := o.runRole(ctx, m, builder, builderTask, builderPrompt(m, workdir, planText), &status)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(builderTask.ID)
 			o.setStateTask(builderTask, domain.TaskCancelled)
 			o.setMissionState(m, domain.MissionCancelled)
 			return end("cancelled", "run cancelled by the user while building; actions already allowed remain in the audit trail")
@@ -195,6 +197,7 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 	reviewText, err := o.runRole(ctx, m, reviewer, reviewerTask, reviewerPrompt(m, workdir, builderText), &status)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.cancelPending(reviewerTask.ID)
 			o.setStateTask(reviewerTask, domain.TaskCancelled)
 			o.setMissionState(m, domain.MissionCancelled)
 			return end("cancelled", "run cancelled by the user during review")
@@ -238,6 +241,9 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 	if err != nil {
 		return "", err
 	}
+	if res.IsError {
+		return "", fmt.Errorf("session reported an error result: %s", firstWords(res.FinalText, 140))
+	}
 	final := res.FinalText
 
 	for resumes := 0; resumes < o.MaxResumes; resumes++ {
@@ -266,6 +272,9 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 					agent.Name, raised.Action.Kind, raised.Action.DisplayTarget())})
 			decision, err = o.waitForDecision(ctx, raised.ID)
 			if err != nil {
+				// A run that dies while an approval is being awaited must not
+				// leave that approval pending and approvable for a dead run.
+				o.cancelPending(task.ID)
 				return final, err
 			}
 		}
@@ -281,7 +290,13 @@ func (o *Orchestrator) runRole(ctx context.Context, m domain.Mission, agent doma
 		turnStart = o.now()
 		res, err = runner.Resume(ctx, resumePrompt)
 		if err != nil {
+			// The turn may have raised a fresh approval before dying; a
+			// cancelled run must not leave it approvable.
+			o.cancelPending(task.ID)
 			return final, err
+		}
+		if res.IsError {
+			return final, fmt.Errorf("session reported an error result: %s", firstWords(res.FinalText, 140))
 		}
 		if res.FinalText != "" {
 			final = res.FinalText
@@ -485,6 +500,15 @@ func (o *Orchestrator) recordBuilderArtifacts(task domain.Task) {
 	t.Artifacts = arts
 	t.UpdatedAt = o.now()
 	_ = o.Store.PutTask(t)
+}
+
+// firstWords trims a session message for an error summary.
+func firstWords(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // artifactPaths re-reads the task's recorded artifacts for the run status.

@@ -25,7 +25,8 @@ qiyan mission create --goal "host demo" --root D:/scratch \
 qiyan task create --mission mi_… --role builder --agent ag_… --title "host work"
                                          # 4. 任务被指派给你的 Agent 身份
 qiyan session bind --task ta_… --agent ag_… --session myhost-1
-                                         # 5. 绑定会话即启动任务（READY → RUNNING）
+                                         # 5. 绑定会话即启动任务（CREATED → RUNNING；
+                                         #    READY 状态属于小队编排的任务）
 
 export AGENT_TOKEN=…                     # 第 2 步得到的 token
 go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN \
@@ -69,7 +70,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
     "delegationTo": "ag_…",      // 仅 agent.delegation（见下）
     "delegationTask": "ta_…",
     "delegationKind": "file.modify",
-    "raw": { }                   // 可选、不透明；供你自己的审计展示
+    "raw": "opaque string",      // 可选；供你自己的审计展示（截断至 200 字符）
   }
 }
 ```
@@ -130,8 +131,9 @@ POST /v1/approvals/{id}/decision        # 仅操作者/本地用户——Agent �
   操作摘要 + 范围摘要；
 - **批准 TTL：15 分钟**（响应里有 `expiresAt` 可读）；
 - 批准会铸造一次性**授权**（TTL 10 分钟），在重试调用时**原子领取**——并发的双重
-  重试不可能执行两次；领取之后再重放会被拒绝（`AUTHORIZATION_REPLAYED`/
-  `authorization_replayed`）；
+  重试不可能执行两次；已用掉或未知的授权**绝不会被静默放行**：重试调用会重新经过
+  引擎评估，若该操作仍需门禁，则以一次**全新的 `REQUIRE_APPROVAL`** 呈现（引擎
+  重新询问，而不是重放——目前线上没有单独的"重放拒绝"信号）；
 - **被拒绝的操作在该任务内保持拒绝**（原因 `user_denied`）；**已取消**的批准永不
   可能再被批准（`approval_cancelled`）；
 - **过期**的批准必须重新发起（经过一次全新的闸门评估）；
@@ -176,7 +178,7 @@ POST /v1/events             Authorization: Bearer <agent token>
 ## 原因码（稳定标识）
 
 原因是 `{ code, params }`——机器稳定，在边缘渲染。当前词表（声明 25 个；标注
-*未产生* 的三个描述引擎目前不会产生的状态——若出现请按通用代码渲染）：
+*未产生* 的四个描述引擎目前不会产生的状态——若出现请按通用代码渲染）：
 
 | 原因码 | 含义 |
 | --- | --- |
@@ -193,7 +195,7 @@ POST /v1/events             Authorization: Bearer <agent token>
 | `delegation_escalation`（`{what}`） | 委派会扩大权限 |
 | `user_approved`（`{approval}`）/ `user_denied` | 人类对重试操作的决定 |
 | `approval_expired` / `approval_cancelled` / `action_changed` | 授权对本次尝试不再有效 |
-| `authorization_replayed` | 一次性授权已被用掉 |
+| `authorization_replayed` *未产生* | 已声明词表；已用掉的授权会触发全新的闸门评估（见审批一节） |
 | `control_unavailable`（`{stage}`） | 审计即拒绝：无法记录的决策就是拒绝 |
 | `no_external_effect` | 仅会话内部记录的操作 |
 | `mode_controlled_auto`、`mode_bounded_autonomy`、`path_not_covered` *未产生* | 已声明词表，目前不会产生 |
@@ -222,7 +224,8 @@ GET  /v1/missions/{id}/run              # 实时事件轨迹（内存态；重�
                                         #   可审计的决策轨迹保存在 GET /v1/decisions）
 POST /v1/missions/{id}/run/cancel       # 停止运行；状态变为 "cancelled"
 GET  /v1/decisions?task=…               # 可审计的轨迹
-GET  /v1/coverage, GET /v1/health       # 强制执行事实 / 存活（无鉴权、无数据）
+GET  /v1/coverage                       # 强制执行事实（操作者/会话——并非无需鉴权）
+GET  /v1/health                         # 仅存活检查（无鉴权、无数据）
 ```
 
 ## 参考 Host
@@ -242,8 +245,10 @@ GET  /v1/coverage, GET /v1/health       # 强制执行事实 / 存活（无鉴�
 错误类稳定；可以新增，既有字符串永不改变。在你的 UI 中按其映射；绝不解析
 `message`。HTTP 状态：`400` `INVALID_REQUEST`（含未知字段、坏 JSON、校验失败）·
 `401` `UNKNOWN_IDENTITY`（凭据缺失/无效）· `403` `IDENTITY_CONFLICT`、
-`AUTHORIZATION_BINDING`、`AUTHORIZATION_REPLAYED`、`OUT_OF_SCOPE`（回环主机/CSRF
-拒绝同样使用该类）· `404` `NOT_FOUND`、`APPROVAL_NOT_FOUND` · `409` `CONFLICT`、
+`AUTHORIZATION_BINDING`、`AUTHORIZATION_REPLAYED`、`OUT_OF_SCOPE`——并有两个
+类→状态表的例外：回环主机/跨源拒绝应答 `403 INVALID_REQUEST`，UI 会话 CSRF
+头缺失或错误应答 `403 UNKNOWN_IDENTITY`；两者都是凭据形态的拒绝，不是决策 ·
+`404` `NOT_FOUND`、`APPROVAL_NOT_FOUND` · `409` `CONFLICT`、
 `APPROVAL_EXPIRED`、`APPROVAL_CANCELLED` · `503` `STORE_CORRUPTED`、
 `CONTROL_UNAVAILABLE` · `500` `INTERNAL`（另有 `BUDGET_EXHAUSTED`、
 `TASK_CANCELLED`、`APPROVAL_REQUIRED` 视情况通过决策结果呈现）。

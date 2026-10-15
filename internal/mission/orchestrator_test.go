@@ -422,3 +422,85 @@ func TestRunCancelYieldsCancelledState(t *testing.T) {
 		}
 	}
 }
+
+func TestRunFailsWhenSessionsReportErrors(t *testing.T) {
+	// Regression (adversarial review finding 10): a session that ends with the
+	// runtime's own error flag (is_error:true — auth expiry, model failure)
+	// must fail the role. It used to be treated as a successful turn, so a
+	// run where every session errored still reported "completed".
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	fake := &fakeRunner{script: []SessionResult{
+		{FinalText: "API Error: upstream model unavailable", IsError: true, ExitCode: 1},
+	}}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return fake
+	}
+	status, err := o.Run(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf("run-level error is reported through the status: %v", err)
+	}
+	if status.State != "failed" || !strings.Contains(status.Summary, "error result") {
+		t.Fatalf("state=%s summary=%q, want failed with an error-result summary", status.State, status.Summary)
+	}
+	got, _, _ := st.GetMission(m.ID)
+	if got.State != domain.MissionFailed {
+		t.Fatalf("mission state = %s, want FAILED", got.State)
+	}
+}
+
+func TestCancelDuringApprovalWaitCancelsPendingApproval(t *testing.T) {
+	// Regression (adversarial review finding 11): cancelling while the run
+	// waits for a decision used to leave the approval PENDING and approvable
+	// for a dead run.
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeCompanion)
+
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		r := &approvalRunner{o: o, mission: m, role: role}
+		if role == domain.RoleBuilder {
+			r.agent, r.task = agent, task
+		}
+		return r
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan RunStatus, 1)
+	go func() {
+		st2, _ := o.Run(ctx, m.ID)
+		done <- st2
+	}()
+
+	// Wait until the builder's approval is pending, then cancel.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		pend, err := st.ListApprovals(domain.ApprovalPending, "")
+		if err == nil && len(pend) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no approval appeared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	status := <-done
+	if status.State != "cancelled" {
+		t.Fatalf("run state = %s (%s), want cancelled", status.State, status.Summary)
+	}
+	left, _ := st.ListApprovals(domain.ApprovalPending, "")
+	if len(left) != 0 {
+		t.Fatalf("%d approval(s) still pending after a cancelled run", len(left))
+	}
+}

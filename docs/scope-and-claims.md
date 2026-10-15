@@ -79,10 +79,11 @@ No version of this project has been published as a product release. The release
 drill remains a provenance-attested test artifact only.
 
 R03 early-access candidates (the `Candidate Build` workflow) are **TEST
-BUILDS**: bare, unsigned, CGO-free binaries labelled
-`EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED`, distributed as
-workflow artifacts with SHA-256 checksums and a build-provenance attestation
-that binds each binary to the exact commit it was built from. They create no
+BUILDS**: bare, unsigned, CGO-free binaries. Each artifact set carries a
+`CANDIDATE-LABEL.txt` stating `EARLY ACCESS / TEST BUILD /
+NOT PRODUCTION-CERTIFIED` (the label travels with the files), plus SHA-256
+checksums and a build-provenance attestation that binds each binary to the
+exact commit it was built from. They create no
 GitHub Release, carry no support or compatibility promise, and describe the
 platforms they were actually built for — not a supported-platform list. A
 downloaded candidate must stay where it is put: the installed Claude Code

@@ -18,7 +18,8 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
   每条结论都用通俗语言配证据，改善建议可以应用并**在你本机实测验证**。
 - **给你的软件接入安全控制。** 任何 Agent Host 都可以在行动前询问 Qiyan 开放
   的本地 Control API：`ALLOW` 执行，`DENY` 停止，`REQUIRE_APPROVAL` 等待——
-  一次批准，只授权那一个确切操作执行一次。
+  一次批准，只授权那一个确切的工具调用执行一次（提供 `contentDigest` 即可把
+  写入内容一并绑定，见契约文档）。
 
 ## 30 秒看懂
 
@@ -40,18 +41,22 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
 > **EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED（早期体验 / 测试构建 /
 > 未经生产认证）。** 候选程序是未签名的、无 CGO 的测试二进制，覆盖
 > linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64，
-> 以仅手动触发的 **Candidate Build** 工作流工件形式发布——绝不创建 GitHub
-> Release，不附带支持或兼容性承诺。每个候选附带 `SHA256SUMS` 与构建来源证明，
-> 绑定到确切提交（`gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`）。
+> 由仅手动触发的 **Candidate Build** 工作流（Actions → Candidate Build）
+> 构建，作为该次运行的工件下载——绝不创建 GitHub Release，不附带支持或
+> 兼容性承诺。请向维护者索取运行链接（只有具备写权限的用户可以触发）。
+> 每个工件集都包含 `CANDIDATE-LABEL.txt`（EARLY ACCESS 标记随文件同行）、
+> `SHA256SUMS`，以及把每个二进制绑定到确切提交的构建来源证明
+> （`gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`）。
 > Windows SmartScreen 与 macOS Gatekeeper 会提示风险；没有签名。**请让二进制
 > 留在你放置它的位置**——已连接的项目指向它的绝对路径，移动或删除它会让门禁
 > 按失败即拒绝工作，从而阻止该项目中的工具调用。关于该渠道的完整说明：
 > [docs/scope-and-claims.zh-CN.md](docs/scope-and-claims.zh-CN.md)。
 
-然后：
+然后运行你解压出的文件（工件保留完整文件名；也可以重命名为 `qiyan`）：
 
 ```sh
-./qiyan serve     # 打印控制台地址、状态目录与 token 文件路径
+./qiyan_0.3.0-r03-candidate_<os>_<arch> serve
+# 打印控制台地址、状态目录与 token 文件路径
 ```
 
 打开打印出的控制台地址，粘贴启动横幅中 token 文件里的 operator token，
