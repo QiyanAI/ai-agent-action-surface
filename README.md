@@ -16,14 +16,14 @@ covered is stated plainly ([scope and claim boundary](docs/scope-and-claims.md))
 Everything is local-first: no account, no cloud, no telemetry — Qiyan sends
 nothing to any Qiyan service. English and 中文 are both first-class.
 
-**Try it now:** the **v0.3.0-beta.1 Public Beta** — five platforms, each built
-from a tagged commit with checksums and build provenance — is assembled and
-awaiting the maintainer's release authorization; once authorized, the files
-appear on [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases).
-No account is needed, and a 60-second demo ships inside. Until the Beta is
-live: build from source in two commands, or ask the maintainer for an
-early-access candidate — either way you are one step from the demo. Full
-steps: [Try it](#try-it).
+**Try it now:** the **v0.3.0-beta.1 Public Beta** builds — five platforms, with
+checksums and build provenance — are prepared and awaiting the maintainer's
+release authorization; when they ship they appear on
+[Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases). No
+account is needed, and a 60-second demo ships inside. Until the Beta is live:
+build from source in two commands, or ask the maintainer for an early-access
+candidate — either way you are one step from the demo. Full steps:
+[Try it](#try-it).
 
 ![The console home: service status, four entries, and the no-account demo](docs/images/console-home.png)
 
@@ -68,16 +68,13 @@ real observation.
 > unsigned, CGO-free binary for linux/amd64, linux/arm64, darwin/amd64,
 > darwin/arm64 and windows/amd64. It is early access — **not** a production
 > security certification — and carries no support or compatibility promise.
-> The release is assembled and awaiting the maintainer's authorization; once
-> authorized, each file attaches to
+> It is prepared and awaiting the maintainer's release authorization; when it
+> ships, the files attach to
 > [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)
-> together with `SHA256SUMS`, `LICENSE.txt` and the EARLY ACCESS/BETA label —
-> five binaries plus those three files — and build provenance is verifiable on
-> every binary with `gh attestation verify` (an attestation in the repository
-> store, not an attached signature). Until the Beta is live, invited testers
-> receive current candidates through the dispatch-only **Candidate Build**
-> workflow (Actions → Candidate Build), and anyone can build from source
-> below.
+> together with `SHA256SUMS`, `LICENSE.txt` and a build-provenance attestation
+> binding each binary to its exact commit. Until then, invited testers receive
+> current candidates through the dispatch-only **Candidate Build** workflow
+> (Actions → Candidate Build), and anyone can build from source below.
 >
 > Windows SmartScreen and macOS Gatekeeper will warn on first run; there is no
 > signing — and do not disable those warnings for other software. **Keep the
@@ -93,17 +90,10 @@ real observation.
 Download for your platform, then verify and run:
 
 ```sh
-sha256sum -c SHA256SUMS        # every line must say OK (Git Bash/WSL; on stock Windows use Get-FileHash below)
+sha256sum -c SHA256SUMS        # every line must say OK
 gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
 ./qiyan_0.3.0-beta.1_<os>_<arch> serve
-# prints the console address, a sign-in link, the state dir and token paths
-```
-
-On stock Windows (PowerShell), where `sha256sum` and `gh` are not built in:
-
-```powershell
-Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
-# compare the hash against the matching line in SHA256SUMS
+# prints the console address, a one-click sign-in link, the state dir and token paths
 ```
 
 Open the printed console address (or the sign-in link) and start with the
