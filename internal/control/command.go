@@ -19,43 +19,52 @@ import (
 // redirect output somewhere unknown — is gated behind explicit user approval.
 // The gate is the approval, not a claim of semantic understanding.
 //
-// Consequences of that honesty, applied deliberately after adversarial review
-// and tightened again for R02-SEC-01:
+// The boundary is a principle, not a name list: a command is auto-allowed
+// only when executing it CANNOT run other programs and cannot be redirected
+// by configuration we do not control.
 //
-//   - Nothing is auto-allowed whose recognized behavior cannot be *proven*
-//     to be side-effect-free. Executing project code (go test), persisting
-//     configuration (go env -w/-u), setting the system clock (date -s, or
-//     BSD-style positional date) and setting the hostname (hostname NAME)
-//     are side effects this classifier cannot rule out, so those forms are
-//     NOT on the safe list and require explicit approval.
-//   - Programs that can write files through their own flags (sort -o,
-//     uniq in out, …) are NOT on the safe list at all.
-//   - Subcommand programs (go, git) are classified only after skipping flags
-//     that take a value, and any flag that redirects output (-o, --output,
-//     -toolexec, -vettool, …) or can run an external helper demotes the
-//     command.
-//   - Git subcommands that transform blob content (diff, show, log, blame)
-//     are not safe: repository configuration (.gitattributes textconv,
-//     diff.external, GIT_EXTERNAL_DIFF) can make them execute helper
-//     programs. Only content-free readers (status, rev-parse, ls-files,
-//     describe, shortlog) are kept.
-//   - An unknown flag before a subcommand demotes the command: it might have
-//     swallowed the real subcommand token.
+//   - Toolchains and repo tools fail that principle categorically, so they
+//     are never auto-allowed — not even for "read-only-looking" subcommands.
+//     git consults configuration that can name external programs (a
+//     repository's own .git/config can set core.fsmonitor, which `git status`
+//     then executes; textconv/diff.external/GIT_EXTERNAL_DIFF do the same
+//     for diff-family commands; -c/--config-env inject such keys inline).
+//     The go toolchain consults GOFLAGS/GOENV and can fetch and execute a
+//     different toolchain (GOTOOLCHAIN). Repository-local config is writable
+//     by the very agent being gated, so none of this is verifiable from
+//     here. All git and go commands therefore require explicit approval.
+//   - What remains auto-allowed is only the print-only set below: programs
+//     that read their own arguments (and files inside the authorized roots)
+//     and print — no configuration lookup that names programs, no helper
+//     spawning, no output redirection.
+//   - Programs with a write or state-change mode in any argument form are
+//     not on the list (sort -o, uniq with an output operand, date -s and
+//     positional date, hostname NAME, …).
 //   - Path-form programs (./x, /usr/bin/x, ..\\x) are never vouched for by
 //     base name, and on Windows a bare name is vouched only if the working
 //     directory does not contain a same-named executable that cmd.exe would
 //     find first.
+//
+// This is still not a sandbox, and the parser is not dressed up as one: a
+// bare name resolves through the session's PATH, which is the user's own
+// environment (declared trust, like the shell itself); anything outside the
+// print-only set goes to pre-execution approval, where the user sees the
+// exact command and decides.
+//
+// R02-SEC-01 record: `go test` (runs project code), `go env -w/-u` (writes
+// persistent configuration) were the first two forms demoted; the second
+// review's `git -c core.fsmonitor=… status` finding showed name-based
+// vouching for any config-consulting toolchain is unsound, and the boundary
+// converged to the principle above.
 
 // CommandClass is the classifier's verdict on one command line.
 type CommandClass string
 
 const (
-	// CmdSafe: a curated program in a curated form whose recognized behavior
-	// is proven free of side effects — a print-only tool, or a compiler-class
-	// subcommand that inspects or compiles without running project code and
-	// whose default output lands in the working tree the scope already
-	// covers. Commands that run project code or persist configuration are
-	// never CmdSafe (R02-SEC-01).
+	// CmdSafe: a print-only program in a curated form — nothing on this list
+	// consults configuration that can name programs, spawns helpers, or
+	// writes. Toolchains and repo tools (go, git, npm, node, …) are never
+	// CmdSafe regardless of subcommand (R02-SEC-01).
 	CmdSafe CommandClass = "safe"
 	// CmdSensitive: a known high-impact program (delete, network, package
 	// management, process control, shell wrappers, interpreters), or a
@@ -70,18 +79,17 @@ const (
 // redirecting. Their presence alone upgrades any command to unrecognized.
 const shellMetachars = ";|&`$><\n\r(){}[]*?~!"
 
-// readOnlyPrograms may run without approval. Every entry's recognized usage
-// only reads or prints: none of them offers a flag or argument form that
-// writes a file or changes system state.
+// readOnlyPrograms may run without approval. Every entry passes the
+// principle above: its recognized usage reads its own arguments (and files
+// inside the authorized roots) and prints — no configuration that names
+// programs, no helper spawning, no write or state-change mode in any
+// argument form.
 //
 // Deliberately absent although superficially read-only: sort (-o writes),
 // uniq (second operand writes), date (-s / positional argument sets the
 // system clock on GNU and BSD forms alike), hostname (a positional NAME sets
-// the host name) — anything whose read-only claim cannot be proven for every
-// argument form. A build tool's default output goes to the working tree,
-// which the scope already covers, so go build/list/vet remain "safe" only
-// through the screened subcommand path below; go test and go env do not
-// (R02-SEC-01).
+// the host name), and every toolchain or repo tool (go, git, npm, node) —
+// see the principle block at the top of this file (R02-SEC-01).
 var readOnlyPrograms = map[string]bool{
 	"ls": true, "dir": true, "pwd": true, "cd": true,
 	"cat": true, "head": true, "tail": true, "wc": true,
@@ -89,35 +97,6 @@ var readOnlyPrograms = map[string]bool{
 	"uname": true, "which": true, "where": true,
 	"true": true, "false": true, "test": true, "type": true,
 	"stat": true, "file": true, "diff": true,
-}
-
-// subcommandReadOnlyPrograms lists subcommands that may run without approval
-// once the surrounding flag structure has been verified.
-//
-// R02-SEC-01 boundary: a subcommand stays here only if it cannot execute
-// project code and cannot persist configuration.
-//
-//   - go: test runs the project's own test binaries (arbitrary code), and
-//     env has persistent write modes (-w/-u); both are demoted to sensitive.
-//     version/list/vet/build inspect or compile without running project
-//     code; vet's -vettool and the build flags that run external helpers are
-//     demoted by the flag screen below.
-//   - git: diff/show/log/blame can execute configured helper programs
-//     (textconv filters, diff.external, GIT_EXTERNAL_DIFF) because they
-//     transform blob content; only content-free readers remain.
-var subcommandReadOnlyPrograms = map[string]map[string]bool{
-	"go":   {"version": true, "list": true, "vet": true, "build": true},
-	"git":  {"status": true, "rev-parse": true, "ls-files": true, "describe": true, "shortlog": true},
-	"npm":  {"--version": true, "-v": true},
-	"node": {"--version": true, "-v": true},
-}
-
-// valueFlags lists, per program, the flags that consume the following token.
-// A subcommand scan must skip those values or it will read the value as the
-// subcommand (git -C log push is `git push` run from directory `log`).
-var valueFlags = map[string]map[string]bool{
-	"git": {"-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--exec-path": true, "--config-env": true},
-	"go":  {"-C": true},
 }
 
 // outputFlags lists flag prefixes that either redirect a program's writes to
@@ -152,6 +131,11 @@ var sensitivePrograms = map[string]bool{
 	// package managers and build systems (arbitrary script execution)
 	"pip": true, "pip3": true, "npm": true, "npx": true, "pnpm": true,
 	"yarn": true, "cargo": true, "make": true, "gradle": true, "mvn": true,
+	// toolchains whose behavior is redirectable by configuration we cannot
+	// verify: git (repo-local and inline config can name external programs,
+	// e.g. core.fsmonitor executed by `git status`) and go (GOFLAGS/GOENV,
+	// GOTOOLCHAIN can fetch and run a different toolchain)
+	"git": true, "go": true,
 	// containers, clouds, infrastructure
 	"docker": true, "kubectl": true, "aws": true, "az": true, "gcloud": true,
 	"terraform": true, "ansible": true, "helm": true,
@@ -208,28 +192,8 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 
 	args := fields[1:]
 
-	if subs, ok := subcommandReadOnlyPrograms[prog]; ok {
-		// A pure flag form listed in the table (npm --version) is safe on its
-		// own; the subcommand scan below only sees positional tokens.
-		if len(args) == 1 && subs[strings.ToLower(strings.Trim(args[0], `"'`))] {
-			return CmdSafe, prog
-		}
-		sub, rest, ok := findSubcommand(fields[1:], valueFlags[prog])
-		if !ok {
-			// Unverifiable flag structure before the subcommand.
-			return CmdSensitive, prog
-		}
-		if !subs[strings.ToLower(sub)] {
-			return CmdSensitive, prog
-		}
-		if hasOutputFlag(args) {
-			return CmdSensitive, prog
-		}
-		_ = rest
-		return CmdSafe, prog
-	}
 	if hasOutputFlag(args) {
-		// A would-be read-only program carrying an output-redirecting flag.
+		// A would-be print-only program carrying an output-redirecting flag.
 		return CmdSensitive, prog
 	}
 	if readOnlyPrograms[prog] {
@@ -239,55 +203,6 @@ func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 		return CmdSensitive, prog
 	}
 	return CmdUnrecognized, prog
-}
-
-// findSubcommand scans tokens after the program name for the first positional
-// token, skipping flags. Known value-taking flags consume the next token;
-// any other flag that is not a plain boolean demotes the command because it
-// might have swallowed the subcommand. ok=false means unverifiable.
-func findSubcommand(fields []string, value map[string]bool) (sub string, rest []string, ok bool) {
-	for i := 0; i < len(fields); i++ {
-		tok := strings.Trim(fields[i], `"'`)
-		if tok == "" {
-			continue
-		}
-		if !strings.HasPrefix(tok, "-") {
-			return tok, fields[i+1:], true
-		}
-		name := tok
-		if idx := strings.IndexByte(name, '='); idx >= 0 {
-			name = name[:idx]
-		}
-		if value[name] {
-			if idx := strings.IndexByte(tok, '='); idx >= 0 {
-				continue // value attached with '='
-			}
-			if strings.HasPrefix(tok, "--") {
-				// Long flag without '=': its value is the next token.
-				i++
-			} else if len(tok) > 2 {
-				// Short flag with attached value, e.g. -Cdir.
-				continue
-			} else {
-				i++ // separate value token
-			}
-			continue
-		}
-		if strings.HasPrefix(tok, "--") {
-			// An unrecognized long flag may or may not take a value; without
-			// knowing, the following token cannot be trusted as the
-			// subcommand.
-			return "", nil, false
-		}
-		// Unknown short flags (-p, -n, …) are assumed boolean; they cannot
-		// hide a value in the curated programs both flags precede nothing.
-		// Treat a lone "-" as positional.
-		if tok == "-" {
-			return tok, fields[i+1:], true
-		}
-		continue
-	}
-	return "", nil, false
 }
 
 // hasOutputFlag reports whether any argument matches an output-redirecting

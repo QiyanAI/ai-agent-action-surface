@@ -115,11 +115,12 @@ func TestWriteAllowedInControlledAuto(t *testing.T) {
 }
 
 func TestSafeCommandAllowedInAutonomousModes(t *testing.T) {
-	// Curated commands run without asking in the two autonomous modes; in
-	// companion mode even a read-only program waits for the user.
+	// Print-only programs run without asking in the two autonomous modes; in
+	// companion mode even a print-only program waits for the user. Toolchains
+	// (go, git, npm) never do — they are config-redirectable (R02-SEC-01).
 	for _, mode := range []domain.AutonomyMode{domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
 		f := newFixture(t, mode)
-		for _, cmd := range []string{"go build ./cmd/qiyan", "go vet ./...", "go list ./...", "git status", "ls -la", "cat notes.md"} {
+		for _, cmd := range []string{"ls -la", "cat notes.md", "head -5 notes.md", "grep TODO main.go", "uname -a", "diff a.txt b.txt"} {
 			if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
 				t.Errorf("mode %s: %q should be allowed, got %s", mode, cmd, got)
 			}
@@ -509,11 +510,24 @@ func TestClassifyCommandTable(t *testing.T) {
 		want CommandClass
 	}{
 		{"ls -la", CmdSafe},
-		{"go build ./cmd/qiyan", CmdSafe},
-		{"go vet ./...", CmdSafe},
-		{"go list ./...", CmdSafe},
-		{"go version", CmdSafe},
-		{"npm --version", CmdSafe},
+		{"uname -a", CmdSafe},
+		{"head -5 notes.md", CmdSafe},
+		// R02-SEC-01 convergence: toolchains are never auto-allowed, because
+		// their behavior is redirectable by configuration Qiyan cannot verify
+		// (repository-local config is writable by the gated agent itself).
+		{"go build ./cmd/qiyan", CmdSensitive},
+		{"go vet ./...", CmdSensitive},
+		{"go list ./...", CmdSensitive},
+		{"go version", CmdSensitive},
+		{"npm --version", CmdSensitive},
+		{"node -v", CmdSensitive},
+		{"git status", CmdSensitive},
+		{"git rev-parse HEAD", CmdSensitive},
+		{"git shortlog -sn", CmdSensitive},
+		// The core.fsmonitor vector from the second review: git executes the
+		// configured hook from `git status`, with or without -c.
+		{"git -c core.fsmonitor=/tmp/hook status", CmdSensitive},
+		{"git --config-env=core.fsmonitor=FSMON status", CmdSensitive},
 		// R02-SEC-01: project-code execution and configuration persistence
 		// are never auto-allowed.
 		{"go test ./...", CmdSensitive},
@@ -536,11 +550,7 @@ func TestClassifyCommandTable(t *testing.T) {
 		// A value-taking flag must not be read as the subcommand:
 		// `git -C log push` is `git push` from directory "log".
 		{"git -C log push", CmdSensitive},
-		{"git status", CmdSafe},
-		{"git rev-parse HEAD", CmdSafe},
-		{"git shortlog -sn", CmdSafe},
-		// Git content transformers can execute configured helpers
-		// (textconv, diff.external, GIT_EXTERNAL_DIFF): approval only.
+		// Content transformers remain covered by the same principle.
 		{"git log", CmdSensitive},
 		{"git diff --stat", CmdSensitive},
 		{"git show HEAD", CmdSensitive},
@@ -679,12 +689,14 @@ func TestSafeCommandArgumentsStayInScope(t *testing.T) {
 	if got := f.eval(t, bash("ls -la C:/outside-dir")).Outcome; got != domain.OutcomeDeny {
 		t.Fatalf("listing outside must deny, got %s", got)
 	}
-	if got := f.eval(t, bash("go build ../outside")).Outcome; got != domain.OutcomeDeny {
-		t.Fatalf("build target outside must deny, got %s", got)
+	// A toolchain command is no longer classified by argument at all: it goes
+	// to approval before any containment question is asked.
+	if got := f.eval(t, bash("go build ../outside")).Outcome; got != domain.OutcomeRequireApproval {
+		t.Fatalf("toolchain commands must require approval, got %s", got)
 	}
 
 	// In-scope forms stay allowed: bare names resolve inside the cwd.
-	for _, cmd := range []string{"cat note.txt", "cat sub/note.txt", "go build ./...", "git status", "grep TODO main.go"} {
+	for _, cmd := range []string{"cat note.txt", "cat sub/note.txt", "grep TODO main.go", "head -5 note.txt"} {
 		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
 			t.Errorf("%q should stay allowed, got %s", cmd, got)
 		}
@@ -705,6 +717,8 @@ func TestSideEffectCommandsRequireApprovalInControlledAuto(t *testing.T) {
 	sideEffecting := []string{
 		"go test ./...",
 		"go test",
+		"go build ./...",
+		"go list ./...",
 		"go env -w GOFLAGS=-mod=mod",
 		"go env -u GOPATH",
 		"go env",
@@ -715,6 +729,10 @@ func TestSideEffectCommandsRequireApprovalInControlledAuto(t *testing.T) {
 		"git diff",
 		"git show HEAD",
 		"git blame main.go",
+		"git status",
+		"git -c core.fsmonitor=/tmp/hook status",
+		"npm --version",
+		"node -v",
 	}
 	for _, cmd := range sideEffecting {
 		d := f.eval(t, bash(cmd))
@@ -730,15 +748,14 @@ func TestSideEffectCommandsRequireApprovalInControlledAuto(t *testing.T) {
 	readOnly := []string{
 		"ls -la",
 		"cat notes.txt",
+		"head -5 notes.txt",
+		"wc -l notes.txt",
 		"grep TODO main.go",
 		"uname -a",
-		"go build ./...",
-		"go vet ./...",
-		"go list ./...",
-		"go version",
-		"git status",
-		"git rev-parse HEAD",
-		"git shortlog -sn",
+		"pwd",
+		"diff a.txt b.txt",
+		"stat notes.txt",
+		"file notes.txt",
 	}
 	for _, cmd := range readOnly {
 		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {

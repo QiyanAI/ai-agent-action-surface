@@ -40,18 +40,25 @@ the actual machine and records the measured tier.
 - **No promise to control commands Qiyan cannot interpret.** Unrecognized
   commands, unrecognized tools, path-form programs and shell metacharacters go
   to approval (or denial) — never to a silent allow.
-- **Command containment is curated, not general.** Only commands whose
-  recognized behavior is proven free of side effects run without asking — a
-  small set of print-only tools (ls, cat, grep, …) with their path arguments
-  checked against the authorized roots, plus compiler-class subcommands that
-  do not execute project code (go build/vet/list) and content-free git
-  readers (status, rev-parse, …). Anything that can run code or change
-  configuration goes to your approval: this includes `go test` (it executes
-  the project's own test binaries), `go env -w/-u` (persistent configuration),
-  `date -s` / positional `date` and `hostname NAME` (system-state setters),
-  git content transformers (`log`, `diff`, `show`, `blame` — repository
-  configuration can make them execute helper programs), and flag forms that
-  run external helpers (`-vettool`, `-toolexec`, `-exec`).
+- **Command containment is curated, not general — and it is not a sandbox.**
+  Auto-allow covers exactly one class: a small set of print-only tools (ls,
+  cat, head, grep, …) that read their own arguments and the files inside the
+  authorized roots, with their path arguments checked against those roots.
+  **Every toolchain or repo tool goes to your approval, whatever its
+  subcommand** — `git`, `go`, `npm`, `node` — because their behavior is
+  redirectable by configuration Qiyan cannot verify, and repository-local
+  configuration is writable by the very agent being gated: a repository's own
+  `.git/config` can set `core.fsmonitor`, which `git status` then executes;
+  textconv/`diff.external`/`GIT_EXTERNAL_DIFF` do the same for git's content
+  commands; `git -c key=value` and `--config-env` inject such keys inline;
+  the go toolchain consults `GOFLAGS`/`GOENV` and `GOTOOLCHAIN` can fetch and
+  run a different toolchain. `go test` runs your project's own test binaries;
+  `go env -w/-u` writes persistent configuration; `date -s` / positional
+  `date` and `hostname NAME` set system state. None of these are auto-allowed;
+  all of them wait for you. Beyond this classifier, the boundary is stated
+  honestly: a bare command name resolves through the session's PATH and
+  environment, which are the user's own trust domain — Qiyan verifies the
+  *classifier's* decisions, not the user's toolchain installation.
 - **MCP servers are never started or contacted.** The lab reads their
   configuration only.
 - **No network force-blocking.** Outbound tool actions are gated (approval),
