@@ -8,11 +8,12 @@ from source: two commands, see the end.)
 > unsigned binary. It is early access — **not** a production security
 > certification — and carries no support or compatibility promise.
 >
-> **Where to get it.** The Beta is prepared and awaiting the maintainer's
-> release authorization; when it ships, the five platform files attach to
+> **Where to get it.** The release is assembled and awaiting the maintainer's
+> authorization; once authorized, the five platform files attach to
 > [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) with
-> `SHA256SUMS`, `LICENSE.txt` and a build-provenance attestation. Until then:
-> invited testers receive current candidates through the dispatch-only
+> `SHA256SUMS`, `LICENSE.txt` and the EARLY ACCESS/BETA label, and build
+> provenance is verifiable with `gh attestation verify`. Until the Beta is
+> live, invited testers receive current candidates through the dispatch-only
 > **Candidate Build** workflow (Actions → Candidate Build), and anyone can
 > build from source with Go 1.27+ (`go build -o qiyan ./cmd/qiyan`).
 
@@ -47,8 +48,15 @@ on your machine before claiming anything.
 ## Verify what you downloaded
 
 ```sh
-sha256sum -c SHA256SUMS          # every line must say OK
+sha256sum -c SHA256SUMS          # every line must say OK (Git Bash or WSL)
 gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
+```
+
+On stock Windows (PowerShell), where `sha256sum` and `gh` are not built in:
+
+```powershell
+Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
+# compare the hash against the matching line in SHA256SUMS
 ```
 
 `gh attestation verify` proves **where the file was built from** — a specific
@@ -128,6 +136,15 @@ go build -o qiyan ./cmd/qiyan
 ```
 
 ## 安装与运行（中文）
+
+> **EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED（早期体验 / Beta /
+> 未经生产认证）。** v0.3.0-beta.1 是未签名的二进制，属于早期体验——**不是**
+> 生产级安全认证——不附带支持或兼容性承诺。发布已装配完成、等待维护者的
+> 授权；获授权后文件连同 `SHA256SUMS`、`LICENSE.txt` 与 EARLY ACCESS/BETA
+> 标记一起出现在
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)。
+> 在此之前：受邀测试者通过 Candidate Build 工作流获取当前候选包；任何人也可
+> 从源码构建（Go 1.27+）。
 
 四个步骤：**下载**你系统的文件 → **解压到你会长期保留的文件夹**（例如
 `C:\Tools\qiyan`；在启动或连接任何项目**之前**放好——服务会记录二进制的绝对

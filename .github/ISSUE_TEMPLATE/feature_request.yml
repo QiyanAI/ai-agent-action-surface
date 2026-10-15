@@ -11,10 +11,10 @@ body:
 
         Qiyan's scope is deliberately narrow — please read
         [docs/scope-and-claims.md](https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/scope-and-claims.md)
-        and the non-goals in
+        first, and note that
         [CONTRIBUTING.md](https://github.com/QiyanAI/ai-agent-action-surface/blob/main/CONTRIBUTING.md)
-        before proposing. Requests that expand the product surface beyond the
-        current scope may be declined even when well built.
+        states the rule that binds here: a change that expands the product
+        surface is declined even if it is well built.
   - type: checkboxes
     id: scope
     attributes:
