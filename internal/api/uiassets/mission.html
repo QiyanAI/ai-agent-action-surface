@@ -21,6 +21,7 @@
     <div class="field">
       <label data-i18n="mission_goal"></label>
       <textarea id="goal" placeholder="…"></textarea>
+      <div class="row" id="goal-samples"></div>
     </div>
     <div class="field">
       <label data-i18n="mission_mode"></label>
@@ -33,7 +34,10 @@
     <div class="row">
       <div class="field" style="flex:2">
         <label data-i18n="mission_root"></label>
-        <input type="text" id="root" placeholder="D:/work/project">
+        <div class="row">
+          <input type="text" id="root" placeholder="D:/work/project" style="flex:1">
+          <span id="root-pick"></span>
+        </div>
       </div>
       <div class="field" style="flex:1">
         <label data-i18n="mission_steps"></label>
@@ -48,11 +52,17 @@
       <button id="create" class="primary" data-i18n="mission_create"></button>
       <button id="start" data-i18n="mission_start" disabled></button>
     </div>
+    <p class="muted" data-i18n="mission_real_note"></p>
+    <p class="muted" id="cc-status"></p>
+    <div id="create-msg"></div>
     <p class="muted"><a href="connect.html">Claude Code <span data-i18n="connect_title"></span> →</a></p>
   </div>
 
   <div id="run-area" style="display:none">
-    <h2><span data-i18n="mission_state"></span>: <span id="state" class="badge"></span></h2>
+    <div class="row spread">
+      <h2><span data-i18n="mission_state"></span>: <span id="state" class="badge"></span></h2>
+      <button id="stop" class="danger" data-i18n="mission_stop" style="display:none"></button>
+    </div>
     <div class="fleet" id="fleet"></div>
 
     <h2 data-i18n="approvals_title"></h2>
@@ -71,7 +81,9 @@
 </main>
 <script src="i18n.js"></script>
 <script src="app.js"></script>
+<script src="picker.js"></script>
 <script src="share.js"></script>
+<script src="tour.js"></script>
 <script src="mission.js"></script>
 </body>
 </html>

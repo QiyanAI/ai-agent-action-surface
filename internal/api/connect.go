@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -135,8 +136,16 @@ func (s *Server) handleConnectApply(w http.ResponseWriter, r *http.Request) {
 	}
 	tier := probe.Tier()
 	if tier != connector.TierEnforced && !req.AllowUnprobed {
-		writeError(w, http.StatusConflict, domain.ErrConflict,
-			"this Claude Code (%s) did not pass the fail-closed probe on this machine (tier: %s); re-run with allowUnprobed to install with the weaker, honestly-labelled protection", det.Version, tier)
+		// The error envelope stays the contract; the structured probe rides
+		// along so consoles can explain the outcome without parsing prose.
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": map[string]string{
+				"class":   string(domain.ErrConflict),
+				"message": fmt.Sprintf("this Claude Code (%s) did not pass the fail-closed probe on this machine (tier: %s); re-run with allowUnprobed to install with the weaker, honestly-labelled protection", det.Version, tier),
+			},
+			"tier":  string(tier),
+			"probe": probe,
+		})
 		return
 	}
 

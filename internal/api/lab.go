@@ -44,6 +44,7 @@ type labApplyReq struct {
 	ProjectDir   string `json:"projectDir"`
 	SuggestionID string `json:"suggestionId"`
 	ClaudeBin    string `json:"claudeBin,omitempty"`
+	Preview      bool   `json:"preview,omitempty"`
 }
 
 type labApplyResp struct {
@@ -52,6 +53,8 @@ type labApplyResp struct {
 	SettingsPath  string             `json:"settingsPath"`
 	BackupPath    string             `json:"backupPath"`
 	Verifications []lab.VerifyResult `json:"verifications"`
+	// Preview marks a dry-run response: the plan, and nothing written.
+	Preview bool `json:"preview,omitempty"`
 }
 
 func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +100,16 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if plan.NoChanges {
+		if req.Preview {
+			writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath, Preview: true})
+			return
+		}
 		writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath})
+		return
+	}
+	if req.Preview {
+		// A real preview: the exact diff that would be written, nothing else.
+		writeJSON(w, http.StatusOK, labApplyResp{Changes: plan.Changes, SettingsPath: plan.SettingsPath, BackupPath: plan.BackupPath, Preview: true})
 		return
 	}
 	if err := lab.ApplyDenyPlan(plan); err != nil {

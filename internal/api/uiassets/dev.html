@@ -19,26 +19,40 @@
 
   <h2 data-i18n="dev_endpoints"></h2>
   <div class="map" id="endpoints"></div>
+  <p class="muted" data-i18n="dev_endpoints_note"></p>
 
   <h2 data-i18n="dev_ask"></h2>
   <pre class="snippet" id="example">curl -s -X POST http://127.0.0.1:8760/v1/authorize \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"missionId":"mi_...","taskId":"ta_...","action":{"kind":"file.read","tool":"note.read","path":"D:/work/note.txt"}}'</pre>
-  <p class="muted" data-i18n="dev_explain"></p>
+  <p class="muted" id="dev-explain" data-i18n="dev_explain"></p>
+
+  <h2 data-i18n="dev_setup"></h2>
+  <div id="dev-setup">
+    <pre class="snippet">qiyan serve
+qiyan agents add --name DemoHost --role builder
+qiyan mission create --goal "reference host demo" --root D:/scratch \
+  --tool note.read --tool report.append --tool tmp.cleanup --tool mail.send
+qiyan task create --mission mi_... --role builder --agent ag_...
+qiyan session bind --task ta_... --agent ag_... --session host-demo-1</pre>
+  </div>
 
   <h2 data-i18n="dev_refhost"></h2>
-  <p class="muted"><span class="mono">cmd/qiyanhost</span> — <span data-i18n="dev_refhost_note"></span></p>
-  <pre class="snippet">go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token TOKEN --mission mi_... --task ta_... --workdir D:/scratch</pre>
+  <p class="muted" id="dev-refhost"><span class="mono">cmd/qiyanhost</span> — <span data-i18n="dev_refhost_note"></span></p>
+  <div id="dev-run">
+    <pre class="snippet">go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN --mission mi_... --task ta_... --workdir D:/scratch</pre>
+  </div>
 
   <h2 data-i18n="dev_coverage"></h2>
   <p class="muted" data-i18n="dev_coverage_note"></p>
-  <div class="map" id="coverage"></div>
+  <div class="map" id="dev-coverage"></div>
 
   <p class="foot" data-i18n="dev_full_docs"></p>
 </main>
 <script src="i18n.js"></script>
 <script src="app.js"></script>
+<script src="tour.js"></script>
 <script src="dev.js"></script>
 </body>
 </html>
