@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -401,4 +403,36 @@ func mustJSON(t *testing.T, v any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestUIServesEmbeddedConsole(t *testing.T) {
+	f := newAPIFixture(t)
+
+	resp, err := http.Get(f.srv.URL + "/ui/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("console index must serve, got %d", resp.StatusCode)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
+		t.Fatalf("console must carry a CSP forbidding inline/external script, got %q", csp)
+	}
+	if !strings.Contains(string(body), "Qiyan") {
+		t.Fatal("index content missing")
+	}
+	if !strings.Contains(string(body), "i18n.js") {
+		t.Fatal("i18n bundle must be referenced")
+	}
+
+	resp2, err := http.Get(f.srv.URL + "/ui/does-not-exist.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 404 {
+		t.Fatalf("missing asset must 404, got %d", resp2.StatusCode)
+	}
 }

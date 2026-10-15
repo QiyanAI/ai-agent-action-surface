@@ -126,9 +126,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/connect", s.handleConnectList)
 	s.mux.HandleFunc("DELETE /v1/connect", s.handleConnectRemove)
 
-	// UI session bootstrap (browser flows; the full console arrives with the
-	// Mission Control UI, but the session mechanics live here).
+	// UI session bootstrap and the embedded console pages.
 	s.mux.HandleFunc("POST /v1/ui/session", s.handleUISession)
+	s.uiRoutes()
 }
 
 // --- middleware ---

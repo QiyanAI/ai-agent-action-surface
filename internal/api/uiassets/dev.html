@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="app.css">
+<title>Qiyan — Developers</title>
+</head>
+<body data-page="nav_dev">
+<header class="top">
+  <span class="brand">Qiyan</span>
+  <nav id="topnav"></nav>
+  <span class="grow"></span>
+  <button id="lang-toggle">中文</button>
+</header>
+<main id="main">
+  <h1>Developer entry — the open control layer</h1>
+  <p class="lead">Any agent host can use Qiyan's control capability through this local, versioned HTTP/JSON API — the same API the console and the built-in Claude Code integration use. No private imports, no SDK required.</p>
+
+  <h2>Endpoints (v1)</h2>
+  <div class="map" id="endpoints"></div>
+
+  <h2>Ask before you act</h2>
+  <pre class="snippet" id="example">curl -s -X POST http://127.0.0.1:8760/v1/authorize \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"missionId":"mi_...","taskId":"ta_...","action":{"kind":"file.read","tool":"note.read","path":"D:/work/note.txt"}}'</pre>
+  <p class="muted">ALLOW → run it. DENY → do not. REQUIRE_APPROVAL → wait, then retry the exact action; an approval authorizes one execution of exactly that action. UNKNOWN is never a green light. If your host can bypass the API, Qiyan does not claim to control that path — the coverage table below says what is actually enforced.</p>
+
+  <h2>See it working: the reference host</h2>
+  <p class="muted">The repository ships <span class="mono">cmd/qiyanhost</span> — a small Go program that does exactly the above: registers, asks, obeys, reports. Run it against this service to watch allow / deny / approval live:</p>
+  <pre class="snippet">go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token TOKEN --mission mi_... --task ta_... --workdir D:/scratch</pre>
+
+  <h2>Coverage — what is actually enforced</h2>
+  <p class="muted">These rows come from real verification runs on this machine, not from documentation.</p>
+  <div class="map" id="coverage"></div>
+
+  <p class="foot">Full documents: <span class="mono">docs/developer-api.md</span> in the repository.</p>
+</main>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script src="dev.js"></script>
+</body>
+</html>
