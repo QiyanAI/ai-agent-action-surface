@@ -32,18 +32,18 @@
       </select>
     </div>
     <div class="row">
-      <div class="field" style="flex:2">
+      <div class="field flex2">
         <label data-i18n="mission_root"></label>
         <div class="row">
-          <input type="text" id="root" placeholder="D:/work/project" style="flex:1">
+          <input type="text" id="root" placeholder="D:/work/project" class="flex1">
           <span id="root-pick"></span>
         </div>
       </div>
-      <div class="field" style="flex:1">
+      <div class="field flex1">
         <label data-i18n="mission_steps"></label>
         <input type="number" id="steps" value="80" min="1">
       </div>
-      <div class="field" style="flex:1">
+      <div class="field flex1">
         <label data-i18n="mission_minutes"></label>
         <input type="number" id="minutes" value="60" min="1">
       </div>
@@ -58,10 +58,10 @@
     <p class="muted"><a href="connect.html">Claude Code <span data-i18n="connect_title"></span> →</a></p>
   </div>
 
-  <div id="run-area" style="display:none">
+  <div id="run-area" class="hidden">
     <div class="row spread">
       <h2><span data-i18n="mission_state"></span>: <span id="state" class="badge"></span></h2>
-      <button id="stop" class="danger" data-i18n="mission_stop" style="display:none"></button>
+      <button id="stop" class="danger hidden" data-i18n="mission_stop"></button>
     </div>
     <div class="fleet" id="fleet"></div>
 

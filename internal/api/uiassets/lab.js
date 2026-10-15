@@ -180,7 +180,7 @@ async function applySuggestion(s, btn) {
     el("option", { value: "manifest" }, t("lab_inputs_manifest")),
     el("option", { value: "mcp-json" }, t("lab_inputs_mcp")));
   const pathRow = el("div", { class: "row" });
-  const path = el("input", { type: "text", id: "scan-path", placeholder: "D:/work/my-project", style: "flex:1" });
+  const path = el("input", { type: "text", id: "scan-path", placeholder: "D:/work/my-project", class: "flex1" });
   const pickWrap = el("span", { id: "scan-path-pick" });
   pathRow.append(path, pickWrap);
   const go = el("button", { class: "primary", id: "lab-run" }, t("lab_inspect"));
@@ -195,7 +195,7 @@ async function applySuggestion(s, btn) {
   // plain path field.
   pickWrap.append(pickerButton(path, {}));
   const syncPicker = () => {
-    pickWrap.style.display = kind.value === "claude-project" ? "" : "none";
+    pickWrap.classList.toggle("hidden", kind.value !== "claude-project");
   };
   kind.addEventListener("change", syncPicker);
   syncPicker();

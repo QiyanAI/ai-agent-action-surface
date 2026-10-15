@@ -110,7 +110,7 @@ async function createMission() {
   rememberProject(body.scope.roots[0]);
   history.replaceState(null, "", "?mission=" + encodeURIComponent(m.id));
   document.getElementById("start").disabled = false;
-  document.getElementById("run-area").style.display = "";
+  document.getElementById("run-area").classList.remove("hidden");
   await refreshMission();
   notifyTour("mission-created");
 }
@@ -134,7 +134,7 @@ async function startRun() {
   }
   createMsg("");
   state.runLive = true;
-  document.getElementById("stop").style.display = "";
+  document.getElementById("stop").classList.remove("hidden");
   notifyTour("run-started");
   startPolling(followRun, 1200);
   startPolling(refreshMission, 2000);
@@ -152,7 +152,7 @@ async function stopRun() {
 }
 
 function showStopButton(show) {
-  document.getElementById("stop").style.display = show ? "" : "none";
+  document.getElementById("stop").classList.toggle("hidden", !show);
 }
 
 async function refreshMission() {
@@ -340,7 +340,7 @@ async function refreshMap() {
       el("td", { class: "mono" }, String(target).slice(0, 80)),
       el("td", {}, el("span", { class: "badge " + (rec.outcome === "ALLOW" ? "ok" : rec.outcome === "DENY" ? "bad" : "warn") }, outcomeText(rec)))));
   }
-  map.append(el("div", { style: "margin-top:12px" }, table));
+  map.append(el("div", { class: "mt12" }, table));
 }
 
 // coverageForRoot finds the recorded probe summary row for this folder, if
@@ -482,8 +482,8 @@ async function renderSummary() {
   if (existing) {
     state.missionId = existing;
     document.getElementById("start").disabled = false;
-    document.getElementById("run-area").style.display = "";
-    document.getElementById("create-card").style.display = "none";
+    document.getElementById("run-area").classList.remove("hidden");
+    document.getElementById("create-card").classList.add("hidden");
     await refreshMission();
     startPolling(followRun, 1200);
     startPolling(refreshMission, 2000);

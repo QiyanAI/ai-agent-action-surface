@@ -7,7 +7,7 @@ async function refreshStatus() {
     const health = await api("GET", "/v1/health");
     const approvals = await api("GET", "/v1/approvals?state=pending");
     clear(strip);
-    strip.style.display = "";
+    strip.classList.remove("hidden");
     const pending = (approvals.approvals || []).length;
     strip.append(
       el("div", { class: "spread" },
@@ -29,7 +29,7 @@ async function refreshStatus() {
       strip.append(el("p", { class: "muted" }, t("none_pending")));
     }
   } catch (e) {
-    strip.style.display = "none";
+    strip.classList.add("hidden");
   }
 }
 

@@ -152,3 +152,21 @@ header.top #help-btn { margin-left: 4px; }
 details.block { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--panel); }
 details.block > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 details.block pre { margin: 8px 0 4px; }
+
+/* Utilities. The console CSP is style-src 'self', which makes markup
+   style="..." attributes inactive in browsers; visibility and trivial
+   layout must therefore be expressed as classes (registered last so they
+   win over component display rules), never inline styles. */
+.hidden { display: none; }
+.flex1 { flex: 1; }
+.flex2 { flex: 2; }
+.mt10 { margin-top: 10px; }
+.mt12 { margin-top: 12px; }
+.mt18 { margin-top: 18px; }
+.mt20 { margin-top: 20px; }
+.small { font-size: 12px; }
+.indent { margin: 6px 0 10px 24px; }
+.indent-left { margin-left: 24px; }
+.demo-card { margin-top: 18px; border-color: var(--demo); }
+.demo-go { background: var(--demo); }
+.share-preview { max-width: 100%; border: 1px solid var(--line); border-radius: 12px; }

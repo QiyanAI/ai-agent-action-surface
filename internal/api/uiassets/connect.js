@@ -226,7 +226,7 @@ async function refreshInstalled() {
       refreshInstalled();
     });
     table.append(el("tr", {},
-      el("td", {}, el("span", { class: "mono" }, inst.projectDir), el("div", { class: "muted", style: "font-size:12px" }, t("connect_measured_note") + (inst.installedAt ? " · " + new Date(inst.installedAt).toLocaleDateString() : ""))),
+      el("td", {}, el("span", { class: "mono" }, inst.projectDir), el("div", { class: "muted small" }, t("connect_measured_note") + (inst.installedAt ? " · " + new Date(inst.installedAt).toLocaleDateString() : ""))),
       el("td", {}, inst.version),
       el("td", {}, tierBadge(inst.tier)),
       el("td", {}, undo)));
