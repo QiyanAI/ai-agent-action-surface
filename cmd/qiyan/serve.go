@@ -137,8 +137,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Qiyan %s control service listening on http://%s\n", version, actual)
 	fmt.Fprintf(stdout, "console:        http://%s/ui/  (sign in with the operator token below)\n", actual)
-	fmt.Fprintf(stdout, "sign-in link:   http://%s/ui/?k=%s\n", actual, operatorToken)
-	fmt.Fprintf(stdout, "                (opens the console signed in; it embeds this run's operator token — keep it private. It stays valid until this service restarts; the console removes it from the address bar after first use.)\n")
+	fmt.Fprintf(stdout, "sign-in link:   http://%s/ui/?k=%s  (opens the console signed in; the key is consumed once)\n", actual, operatorToken)
 	fmt.Fprintf(stdout, "state dir:      %s\n", *dir)
 	fmt.Fprintf(stdout, "operator token: %s\n", filepath.Join(*dir, "operator.token"))
 	fmt.Fprintf(stdout, "hook token:     %s\n", filepath.Join(*dir, "hook.token"))
