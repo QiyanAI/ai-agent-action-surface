@@ -135,6 +135,7 @@ func runConnectClaude(args []string, stdout, stderr io.Writer, stdin io.Reader) 
 			fmt.Fprintf(stdout, "  probe: %v\n", ev)
 		}
 	}
+	fmt.Fprintln(stdout, "boundary: Qiyan is not an OS sandbox; only Claude Code is supported; shell commands always wait for your approval; paths outside this gate are not protected; Claude Code model calls go to Anthropic under its own terms.")
 	fmt.Fprintf(stdout, "\nUndo any time with: %s connect undo --project %q\n", programName, *project)
 	fmt.Fprintln(stdout, "Protection applies to future Claude Code sessions in that project; existing sessions are not retroactively covered.")
 	return 0

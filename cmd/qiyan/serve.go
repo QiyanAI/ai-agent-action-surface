@@ -117,6 +117,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: cannot listen on %s: %v\n", programName, *addr, err)
+		fmt.Fprintf(stderr, "Hint: the port may be in use; choose another with --addr 127.0.0.1:<port>.\n")
 		return 1
 	}
 	actual := ln.Addr().String()
@@ -136,6 +137,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Qiyan %s control service listening on http://%s\n", version, actual)
 	fmt.Fprintf(stdout, "console:        http://%s/ui/  (sign in with the operator token below)\n", actual)
+	fmt.Fprintf(stdout, "sign-in link:   http://%s/ui/?k=%s\n", actual, operatorToken)
+	fmt.Fprintf(stdout, "                (opens the console signed in; it embeds this run's operator token — keep it private. It stays valid until this service restarts; the console removes it from the address bar after first use.)\n")
 	fmt.Fprintf(stdout, "state dir:      %s\n", *dir)
 	fmt.Fprintf(stdout, "operator token: %s\n", filepath.Join(*dir, "operator.token"))
 	fmt.Fprintf(stdout, "hook token:     %s\n", filepath.Join(*dir, "hook.token"))

@@ -93,6 +93,7 @@ async function doPreview() {
   card.append(el("p", { class: "muted" }, t("connect_tier_version") + ": " + tierImpliedLabel(det.TierFromVersion) +
     " · " + t("connect_floor") + ": " + (data.supportFloor || "")));
   card.append(techDetails(plan.changes || plan.Changes || []));
+  card.append(el("p", { class: "muted" }, t("connect_boundary")));
   if (plan.noChanges) {
     card.append(el("p", { class: "badge ok" }, t("connect_already")));
     card.append(el("p", {}, el("a", { class: "go", href: "mission.html?project=" + encodeURIComponent(req.projectDir) }, t("connect_go_mission"))));

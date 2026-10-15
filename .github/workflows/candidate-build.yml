@@ -1,25 +1,40 @@
 name: Candidate Build
 
-# Early-access TEST candidates for invited testers (R03-16). Honest boundary:
-# this workflow builds, checksums, attests and uploads workflow artifacts. It
-# NEVER creates a GitHub Release — not even a draft — and it publishes no
-# product version. A candidate is a bare CGO-free binary set labelled
-# EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED, bound to the exact
-# commit it was built from (the commit SHA is injected at build time and is
-# never written back into the tree).
+# Early-access candidates for invited testers (R03-16) and, from R04, the
+# Public Beta artifact set (R04-04). Honest boundary: this workflow builds,
+# checksums, attests and uploads workflow artifacts. It NEVER creates a
+# GitHub Release — not even a draft — and it publishes no product version.
+# A candidate is a bare CGO-free binary set labelled EARLY ACCESS, bound to
+# the exact commit it was built from (the commit SHA is injected at build
+# time and is never written back into the tree).
+#
+# Two flavors:
+#   test — EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED (invited
+#          testers; the R03 channel, continued).
+#   beta — EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED (the artifact set
+#          the maintainer, and only the maintainer, may attach to a Release).
+#          Beta builds only run at the tag refs/tags/v<version_label>; the
+#          label records the tag, and the completeness gate re-checks it.
+# The flavors are labels, not permissions: both produce artifacts only, and
+# neither can publish anything. Attaching a beta set to a GitHub Release is
+# the maintainer's action, done from the downloaded artifact.
 #
 # Permissions mirror the release drill's build job exactly (contents: read +
 # id-token/attestations for provenance signing); no new permission type is
-# introduced, and there is no write-capable job at all. Formal GitHub
-# releases remain release-drill.yml's draft flow and, beyond R03, the
-# maintainer's decision.
+# introduced, and there is no write-capable job at all.
 on:
   workflow_dispatch:
     inputs:
+      flavor:
+        description: Label flavor of this artifact set
+        required: true
+        type: choice
+        options: [test, beta]
+        default: test
       version_label:
         description: Version string injected into the candidates (also used in file names)
         required: true
-        default: 0.3.0-r03-candidate
+        default: 0.3.0-r04-test
       retention_days:
         description: How long the artifact stays downloadable
         required: true
@@ -57,6 +72,7 @@ jobs:
           # bash parses the script (command substitution inside the value
           # would execute). Passed through env and validated instead.
           VERSION_INPUT: ${{ inputs.version_label }}
+          FLAVOR_INPUT: ${{ inputs.flavor }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -66,9 +82,25 @@ jobs:
             echo "version_label must be 3-40 characters of [A-Za-z0-9._-]" >&2
             exit 1
           fi
+          flavor="$FLAVOR_INPUT"
+          case "$flavor" in
+            test) status_line="EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED" ;;
+            beta) status_line="EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED" ;;
+            *) echo "flavor must be test or beta" >&2; exit 1 ;;
+          esac
+          # A beta set's version identity must be bound to a real tag: the
+          # beta flavor only builds from the exact tag it names (G3/R04-05).
+          # Test candidates may come from any ref.
+          if [ "$flavor" = beta ]; then
+            if [ "$GITHUB_REF" != "refs/tags/v${version}" ]; then
+              echo "beta builds must run at the tag refs/tags/v${version} (got ${GITHUB_REF}); create the tag first and dispatch with --ref v${version}" >&2
+              exit 1
+            fi
+          fi
           commit="${GITHUB_SHA}"
           built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+          echo "flavor    : ${flavor}"
           echo "version   : ${version}"
           echo "commit    : ${commit}"
           echo "built     : ${built}"
@@ -88,21 +120,33 @@ jobs:
             echo "built ${out}"
           done
 
+          # The licence travels with the binaries (Apache-2.0, section 4(a)):
+          # recipients must receive a copy of the licence with the work.
+          cp LICENSE dist/LICENSE.txt
+
           # The label travels WITH the artifacts: separated from this page a
           # candidate must still say what it is. It lives inside dist/ so the
           # upload below (dist/*) actually carries it. (printf, not a heredoc:
           # the YAML indentation would make a heredoc terminator unreachable.)
           {
-            printf '%s\n' "EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED"
+            printf '%s\n' "${status_line}"
+            printf 'flavor:  %s\n' "${flavor}"
             printf 'version: %s\n' "${version}"
             printf 'commit:  %s\n' "${commit}"
+            if [ "$flavor" = beta ]; then
+              printf 'tag:     refs/tags/v%s\n' "${version}"
+            fi
             printf 'built:   %s on %s\n' "${built}" "${RUNNER_OS}"
             printf '%s\n' \
-              "This is an unsigned, CGO-free test build produced by the Candidate Build workflow." \
+              "This is an unsigned, CGO-free early-access build produced by the Candidate Build workflow." \
               "It is not a product release, carries no support or compatibility promise," \
               "and must stay at the path it is extracted to: installed Claude Code" \
               "integrations point at the binary's absolute path, and moving or deleting" \
-              "it makes the gate fail closed."
+              "it makes the gate fail closed." \
+              "Install, verify and uninstall: https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/install.md" \
+              "Known limitations: the release notes that accompany this set, when published." \
+              "Security reports: https://github.com/QiyanAI/ai-agent-action-surface/security/advisories/new" \
+              "License: Apache-2.0 — see LICENSE.txt in this set."
           } > dist/CANDIDATE-LABEL.txt
 
       - name: Record artifact identity
@@ -116,12 +160,14 @@ jobs:
       - name: Verify the candidate set is complete
         env:
           VERSION_INPUT: ${{ inputs.version_label }}
+          FLAVOR_INPUT: ${{ inputs.flavor }}
         run: |
           set -euo pipefail
           # The artifact must never be published half-formed: every expected
           # file present and non-empty, the checksums self-consistent, and the
-          # label bound to this run's version and commit.
+          # label bound to this run's flavor, version and commit.
           version="$VERSION_INPUT"
+          flavor="$FLAVOR_INPUT"
           expected=(
             "qiyan_${version}_linux_amd64"
             "qiyan_${version}_linux_arm64"
@@ -130,6 +176,7 @@ jobs:
             "qiyan_${version}_windows_amd64.exe"
             "SHA256SUMS"
             "CANDIDATE-LABEL.txt"
+            "LICENSE.txt"
           )
           for f in "${expected[@]}"; do
             if [ ! -s "dist/$f" ]; then
@@ -142,9 +189,13 @@ jobs:
             exit 1
           fi
           (cd dist && sha256sum --check SHA256SUMS)
+          grep -q "^flavor:  ${flavor}$" dist/CANDIDATE-LABEL.txt
           grep -q "^version: ${version}$" dist/CANDIDATE-LABEL.txt
           grep -q "^commit:  ${GITHUB_SHA}$" dist/CANDIDATE-LABEL.txt
-          echo "candidate set complete: 5 binaries + SHA256SUMS + CANDIDATE-LABEL.txt"
+          if [ "$flavor" = beta ]; then
+            grep -q "^tag:     refs/tags/v${version}$" dist/CANDIDATE-LABEL.txt
+          fi
+          echo "candidate set complete: 5 binaries + SHA256SUMS + CANDIDATE-LABEL.txt + LICENSE.txt"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
@@ -154,7 +205,7 @@ jobs:
       - name: Upload candidates
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: r03-candidate-${{ github.sha }}
+          name: ${{ inputs.flavor }}-${{ inputs.version_label }}-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
           retention-days: ${{ inputs.retention_days }}

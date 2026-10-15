@@ -1,0 +1,39 @@
+name: Documentation issue
+description: A document is wrong, missing, or hard to follow.
+title: "[Docs] "
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste credentials, tokens, private code or personal data. Use
+        synthetic examples only.**
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      description: File path or link (README, docs/install.md, the console's Help, …).
+      placeholder: "docs/install.md"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing
+      description: Quote the sentence if you can, and say what it should say instead — or what you could not find.
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: What you were trying to do (optional)
+      description: The task that led you to this page. Helps judge what the doc should have answered.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have not included credentials, tokens, private code or personal data in this report.
+          required: true

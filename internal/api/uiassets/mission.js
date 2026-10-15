@@ -174,6 +174,14 @@ async function refreshMission() {
       // A mission entered via deep link (no live page) still needs its
       // decision trail before the outcome card can count anything.
       if (!state.lastDecisions) await refreshMap();
+      // …and its run record, when the service still holds one. Without this
+      // fetch the outcome card would claim the record was "lost to a service
+      // restart" on a page that simply never asked for it.
+      if (!state.lastRun) {
+        try {
+          state.lastRun = await api("GET", "/v1/missions/" + state.missionId + "/run");
+        } catch (e) { /* genuinely gone; the notice is accurate then */ }
+      }
       await renderSummary();
       state.summaryRendered = true;
     }

@@ -1,22 +1,38 @@
-# Qiyan — Open Agent Mission & Control
+# Qiyan — Open Agent Mission & Control Platform
 
-**Your AI team. Your rules.**
+**Your AI Team. Your Rules.**
 
 Qiyan is a local, open platform for running AI agents under verifiable
 pre-execution control: connect your existing AI software, hand a mission to a
 small crew of agents, watch every action, and decide what they may do. Safety
-is enforced *before* something runs — not described afterwards.
+is enforced *before* something runs — not described afterwards. And other
+software can put the same control in front of its own actions through Qiyan's
+open, local Control API.
 
-Everything is local-first: no account, no cloud, no telemetry. English and
-中文 are both first-class.
+Every capability below links to a reproducible run record
+([R03 acceptance evidence](docs/R03-ACCEPTANCE-REPORT.md)), and what is *not*
+covered is stated plainly ([scope and claim boundary](docs/scope-and-claims.md)).
+
+Everything is local-first: no account, no cloud, no telemetry — Qiyan sends
+nothing to any Qiyan service. English and 中文 are both first-class.
+
+**Try it now:** the **v0.3.0-beta.1 Public Beta** — five platforms, each built
+from a tagged commit with checksums and build provenance — is assembled and
+awaiting the maintainer's release authorization; once authorized, the files
+appear on [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases).
+No account is needed, and a 60-second demo ships inside. Until the Beta is
+live: build from source in two commands, or ask the maintainer for an
+early-access candidate — either way you are one step from the demo. Full
+steps: [Try it](#try-it).
 
 ![The console home: service status, four entries, and the no-account demo](docs/images/console-home.png)
 
 ## What it can do for you
 
 - **Let a small AI team do the work.** Give one goal; a Planner, a Builder and
-  a Reviewer work in three real sessions on your machine — and every sensitive
-  action pauses for your decision.
+  a Reviewer work in three real sessions on your machine — sensitive actions
+  stop at the gate: in-scope ones pause for your decision, and anything
+  outside the mission's scope is denied outright.
 - **Check whether an AI is risky.** The Safety Lab reads an agent's declared
   abilities and project wiring, attaches evidence to every finding in plain
   words, and its suggestions can be applied and *verified on your machine*.
@@ -33,8 +49,10 @@ Everything is local-first: no account, no cloud, no telemetry. English and
    this machine — the version number is never trusted.
 3. **Give the fleet a mission**; the Planner plans, the Builder works, the
    Reviewer checks.
-4. Anything sensitive **stops and asks you** — approve once, or deny; a denied
-   action stays denied for that task.
+4. Anything sensitive **stops at the gate** — in-scope actions wait for your
+   decision (approve once, or deny; a denial holds for that task), and
+   out-of-scope actions are denied outright, never waiting for an approval
+   that could release them.
 5. Every decision is **recorded with evidence**, and the console shows what is
    actually enforced — and what is not.
 
@@ -47,34 +65,53 @@ three agents working, one action blocked, one decision you make yourself.
 Synthetic content is labelled `DEMO` everywhere and can never be recorded as a
 real observation.
 
-### Run it without the Go toolchain (early access)
+### Get the build (no Go toolchain)
 
-> **EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED.**
-> Candidates are unsigned, CGO-free test binaries for linux/amd64, linux/arm64,
-> darwin/amd64, darwin/arm64 and windows/amd64, produced by the dispatch-only
-> **Candidate Build** workflow (Actions → Candidate Build) and published as
-> that run's downloadable workflow artifact — never as a GitHub Release, with
-> no support or compatibility promise. Ask the maintainer for a run link (only
-> users with write access can dispatch it). Each artifact set contains
-> `CANDIDATE-LABEL.txt` (the EARLY ACCESS marking travels with the files),
-> `SHA256SUMS`, and a build-provenance attestation binding each binary to its
-> exact commit (`gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface`).
+> **EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED.** v0.3.0-beta.1 is an
+> unsigned, CGO-free binary for linux/amd64, linux/arm64, darwin/amd64,
+> darwin/arm64 and windows/amd64. It is early access — **not** a production
+> security certification — and carries no support or compatibility promise.
+> The release is assembled and awaiting the maintainer's authorization; once
+> authorized, each file attaches to
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)
+> together with `SHA256SUMS`, `LICENSE.txt` and the EARLY ACCESS/BETA label —
+> five binaries plus those three files — and build provenance is verifiable on
+> every binary with `gh attestation verify` (an attestation in the repository
+> store, not an attached signature). Until the Beta is live, invited testers
+> receive current candidates through the dispatch-only **Candidate Build**
+> workflow (Actions → Candidate Build), and anyone can build from source
+> below.
+>
 > Windows SmartScreen and macOS Gatekeeper will warn on first run; there is no
-> signing. **Keep the binary where you put it** — connected projects point at
-> its absolute path, and moving or deleting it makes the gate fail closed and
-> block that project's tools. Full honesty about this channel:
+> signing — and do not disable those warnings for other software. **Keep the
+> binary where you put it** (a folder you will keep, before connecting any
+> project): connected projects point at its absolute path, and moving or
+> deleting it makes the gate fail closed and block that project's tools.
+> Step-by-step install, verify and uninstall instructions — including what is
+> built vs actually tested vs officially supported:
+> [docs/install.md](docs/install.md). Known limitations and the security
+> report channel travel with the release and in
 > [docs/scope-and-claims.md](docs/scope-and-claims.md).
 
-Then run the file you extracted (the artifact keeps its full name; rename it
-to `qiyan` if you prefer):
+Download for your platform, then verify and run:
 
 ```sh
-./qiyan_0.3.0-r03-candidate_<os>_<arch> serve
-# prints the console address, the state dir and token paths
+sha256sum -c SHA256SUMS        # every line must say OK (Git Bash/WSL; on stock Windows use Get-FileHash below)
+gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
+./qiyan_0.3.0-beta.1_<os>_<arch> serve
+# prints the console address, a sign-in link, the state dir and token paths
 ```
 
-Open the printed console address, paste the operator token from the token file
-the banner names, and start with the demo — or connect a real project as below.
+On stock Windows (PowerShell), where `sha256sum` and `gh` are not built in:
+
+```powershell
+Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
+# compare the hash against the matching line in SHA256SUMS
+```
+
+Open the printed console address (or the sign-in link) and start with the
+60-second demo — no account, no Claude Code needed — or connect a real
+project as below.
 
 ### Run it from source (Go 1.27+)
 
@@ -86,12 +123,19 @@ go build -o qiyan ./cmd/qiyan
 Everything is standard library only; there are no third-party dependencies to
 download.
 
-### Where it runs
+### Where it runs: built vs tested vs supported
 
-CI builds and tests on **ubuntu-latest, windows-latest and macos-latest**, and
-candidate builds cover the five targets above; the R02/R03 live verification
-runs were performed on **Windows 11**. There is **no supported-platform list
-yet** — treat other environments as unverified, not unsupported.
+Three different things, stated separately — built is not tested, and tested is
+not supported:
+
+| State | What it covers |
+| --- | --- |
+| **Built** | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 — the five targets above, each bound to its exact commit by the candidate build's gate and attestation |
+| **Actually tested** | windows/amd64: a real candidate ran (service boot, `/v1/health`, console served, 2026-10-15); CI additionally compiles and runs `qiyan version`/`help` on ubuntu-, windows- and macos-latest; all deep feature verification in R02/R03 ran on one **Windows 11** machine. The linux/arm64 and darwin/amd64 candidate files have **never been executed**; linux/amd64 and darwin/arm64 were smoke-run only through CI's runner-native builds |
+| **Officially supported** | **No platform list exists yet.** Runtime support: only Claude Code, fail-closed on 2.1.295+ (measured per machine by the connector's live probe — a version number is never trusted) |
+
+Treat anything not in the "actually tested" row as unverified, not unsupported.
+CI runs on **ubuntu-latest, windows-latest and macos-latest**.
 
 ## Connect your own AI project
 
@@ -128,18 +172,24 @@ qiyan run --mission mi_...
   **not an operating-system sandbox**. If your host can bypass the Control
   API, Qiyan does not claim to control that path; the coverage table says what
   is actually enforced.
-- No SaaS, no accounts, no telemetry. Nothing leaves your machine.
+- No SaaS, no accounts, no telemetry — Qiyan's own control service runs on
+  loopback and uploads nothing to any Qiyan service. When you connect Claude
+  Code, its model calls go to Anthropic under Anthropic's own network and
+  data-handling terms; Qiyan neither intermediates nor controls that traffic.
 
 The full, precise list of what is and is not claimed:
 [docs/scope-and-claims.md](docs/scope-and-claims.md) ·
 [中文](docs/scope-and-claims.zh-CN.md).
 
-## For developers: the open control layer
+## For developers: the Qiyan Open Control Contract
 
-The console's **Developers** entry walks the whole flow — and there is a
-guided tour for it. The interface is a local, versioned HTTP/JSON API:
-`POST /v1/authorize` before acting, poll approvals, report results with
-`POST /v1/events`. The repository ships a fully independent reference host:
+The contract spells one loop in five stages —
+**Action → Risk & Evidence → Authorization → Enforcement → Outcome** — so any
+agent host can ask before it acts and prove after it acted. The console's
+**Developers** entry walks the whole flow — and there is a guided tour for it.
+The interface is a local, versioned HTTP/JSON API: `POST /v1/authorize` before
+acting, poll approvals, report results with `POST /v1/events`. The repository
+ships a fully independent reference host:
 
 ```sh
 go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN \
@@ -163,6 +213,22 @@ classes, coverage, compatibility policy):
 | Demo & training | synthetic, interactive, data-layer-separated from real events |
 | R03 acceptance evidence | [docs/R03-ACCEPTANCE-REPORT.md](docs/R03-ACCEPTANCE-REPORT.md) |
 
+### The Action Graph
+
+Underneath every layer is one structure: **Agent → Tool → Action Capability**,
+with every edge backed by evidence, not by assertion. An action kind carries
+capabilities (`read_files`, `write_files`, `execute_process`, …); a tool name
+maps to the capabilities it can exercise; and the resulting record is only as
+strong as its `EvidenceLevel` — `DECLARED` (a manifest says so),
+`STATICALLY_CONNECTED` (config wiring), `OBSERVED` (an integration saw it), or
+`ENFORCED` (a real pre-execution gate proved it stopped). An evidence record
+never appears above its level, and every enforced claim carries a stated
+`Boundary` — what it does *not* cover. That is also why the console shows
+coverage as `ENFORCED / OBSERVED / UNCOVERED / UNKNOWN` per execution path,
+and why there is deliberately no `protected: true` shortcut anywhere in the
+API: an unexercised path stays `UNKNOWN`, and unknown is not a promise.
+(`internal/domain/evidence.go`, `capability.go`.)
+
 ## Repository layout
 
 ```
@@ -178,6 +244,15 @@ internal/mission    the three-role fleet orchestrator
 internal/lab        the Agent Safety Lab
 internal/playground synthetic demo & training content (inert by construction)
 ```
+
+## Feedback
+
+Bug reports, feature requests, adapter requests and documentation problems all
+go through
+[issues](https://github.com/QiyanAI/ai-agent-action-surface/issues/new/choose) —
+there are guided forms for each. This is a single-maintainer project: responses
+are best-effort, and no service level is promised. Suspected vulnerabilities do
+**not** go in issues — use the private channel in [SECURITY.md](SECURITY.md).
 
 ## Security, license and contributing
 
