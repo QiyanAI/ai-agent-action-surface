@@ -4,10 +4,11 @@
 VALIDATED experience gates; see §9). Final acceptance belongs to the user.**
 
 **Verified code state:** `b4876cf0babed4d9e596b1e78f15a14259e14069`; amended by
-the R02-SEC-01 fix at `0d894507175fcf97f8b416baa490801525650f22` (both on
-`r02/mission-control`; tree hashes byte-identical to the locally tested trees —
-verified by tree-hash comparison after landing). This report is added in a
-report-only commit on top of that state; no code changed by this commit.
+the R02-SEC-01 fix at `0d894507175fcf97f8b416baa490801525650f22` and converged
+at `f7ffba4c491e6ca94d8cfa05531ea9aa96234f18` (all on `r02/mission-control`;
+tree hashes byte-identical to the locally tested trees — verified by tree-hash
+comparison after each landing). This report is added in a report-only commit
+on top of that state; no code changed by this commit.
 
 **Baseline:** `main` @ `e6d2842042370cd268d81581a751125125c7887c`, exactly the
 SHA the R02 V2.0 task book names. R01 was neither reopened nor modified.
@@ -209,6 +210,59 @@ forms; the `developer-api` examples no longer use a now-gated command.
 first-time users) remain **NOT VALIDATED** — the fix changes no UX claim and
 no architecture. This addendum affects only the command classification
 boundary described above.
+
+## 9b. R02-SEC-01 second review — principle-based convergence
+
+The second independent review reproduced a same-class gap: `git status` can
+execute an external hook via `core.fsmonitor` (Git documents this behavior),
+so `git -c core.fsmonitor=… status` slipped through the `-c` value-flag skip
+into the auto-allow table. Reproduced harmlessly in a temp repository.
+
+Instead of another per-form blacklist entry, the boundary converged to the
+principle itself (commit `f7ffba4c`):
+
+- **Auto-allow is exactly one class: print-only programs** (ls, cat, head,
+  tail, wc, grep, echo, pwd, uname, whoami, which, where, stat, file, diff,
+  true/false/test/type, cd) whose recognized usage reads its own arguments
+  and files inside the authorized roots — nothing consults configuration
+  that names programs, nothing spawns helpers, nothing writes.
+- **Every toolchain and repo tool now requires approval, whatever the
+  subcommand**: `git` (repo-local config is writable by the gated agent
+  itself — `core.fsmonitor` runs on `git status`; textconv / diff.external /
+  GIT_EXTERNAL_DIFF on content commands; `-c`/`--config-env` inject keys
+  inline), `go` (`GOFLAGS`/`GOENV` consulted; `GOTOOLCHAIN` can fetch and
+  execute a different toolchain; `go test` runs project test binaries;
+  `go env -w/-u` persists configuration), `npm`/`node` (config machinery
+  Qiyan cannot verify). The subcommand-scanning machinery was deleted with
+  it — there is no name-based vouching left to bypass.
+- **The product claim was corrected to the real boundary**: the
+  "proven side-effect-free" phrasing was replaced in
+  `docs/scope-and-claims(.zh-CN)` with the precise guarantee (print-only
+  class; everything redirectable by unverifiable configuration waits for the
+  user) plus an explicit statement that the boundary is not a sandbox: bare
+  names resolve through the session's PATH/environment, which is the user's
+  own trust domain.
+
+**Evidence (live, same day):**
+- Vector proof (harmless, operator shell, temp repo): a repo configured with
+  `core.fsmonitor=<script>` — plain `git status` executed the script (marker
+  file created). The vector is real in this environment.
+- Gate evidence (real hook channel, bound session): **12/12 forms →
+  REQUIRE_APPROVAL, each with a recorded pending approval** — `git status`
+  (in the configured repo), `git -c core.fsmonitor=… status`,
+  `git --config-env=core.fsmonitor=FSMON status`, `git log`,
+  `git rev-parse HEAD`, `go build ./...`, `go test ./...`,
+  `go env -w GOFLAGS=-mod=mod`, `npm --version`, `node -v`, `date -s 12:00`,
+  `hostname newname`. **6/6 print-only forms → ALLOW** — `ls -la`,
+  `cat note.txt`, `head -3 note.txt`, `grep hello note.txt`, `uname -a`,
+  `pwd`.
+- Regression tests updated to assert the new boundary in both directions
+  (classifier table incl. the fsmonitor forms; engine-level approval/allow
+  split; containment tests adjusted), running on the three-OS CI.
+
+**U02 (human 60-second timing) and U13 (independent first-time users) remain
+NOT VALIDATED** — unchanged by this convergence; no UX claim and no
+architecture was altered.
 
 ## 10. Re-running the evidence
 
