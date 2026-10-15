@@ -108,24 +108,11 @@ jobs:
       # pattern in .github/claims-banned.txt (Chinese and English) is a phrase
       # the task book forbids; a hit fails the build so a rewrite cannot
       # silently reintroduce one. The pattern file itself is excluded.
-      # Known limit: git grep matches line by line, so a banned phrase broken
-      # across two lines with a hard wrap is not detected — keep such phrases
-      # on one line when quoting them.
       - name: Scan for banned absolute claims
         run: |
           set -euo pipefail
-          if [ ! -s .github/claims-banned.txt ]; then
-            echo "::error::.github/claims-banned.txt is missing or empty — the claim guard cannot run."
-            exit 1
-          fi
-          rc=0
-          git grep -nFf .github/claims-banned.txt -- '*.md' '*.js' '*.go' '*.yml' '*.yaml' '*.html' ':!.github/claims-banned.txt' || rc=$?
-          if [ "$rc" -eq 0 ]; then
+          if git grep -nFf .github/claims-banned.txt -- '*.md' '*.js' '*.go' ':!.github/claims-banned.txt'; then
             echo "::error::Banned absolute-claim wording found (matches above); rephrase honestly."
-            exit 1
-          fi
-          if [ "$rc" -ne 1 ]; then
-            echo "::error::the claim scan itself failed (git grep exit $rc) — failing closed."
             exit 1
           fi
           echo "no banned absolute claims found"

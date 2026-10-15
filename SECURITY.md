@@ -27,12 +27,8 @@ anyway. Reports that turn out not to be vulnerabilities are still welcome.
 该渠道仅在您与维护者之间可见。**请不要为疑似漏洞开公开 Issue。**
 不确定是否算漏洞时，仍请私下报告；最终不是漏洞的报告同样欢迎。
 
-我们会（通常几天内）确认收到报告，并评估是否构成漏洞及其严重程度；修复并
-披露后会在公告中致谢——除非您要求匿名。请不要测试您不拥有、或未获授权测试的
-基础设施；报告中不要包含真实凭证、个人数据或第三方数据。
-
 这是一个单维护者项目，没有付费安全团队：确认与修复是尽力而为的，
-**没有漏洞赏金**。
+**没有漏洞赏金**。报告中不要包含真实凭证、个人数据或第三方数据。
 
 ## What is in scope
 
@@ -78,9 +74,8 @@ goodwill in both directions.
 ## Supported versions
 
 No version of this project has been released as a product. Early-access builds
-— the test candidates and the v0.3.0-beta.1 Public Beta once it ships — are
-signalled `EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED` (test
-candidates) and `EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED` (the Beta):
-they are not production certified, carry no support or compatibility promise,
-and there is no supported-version patch policy yet. Reports are nonetheless
-welcome — the feedback is most useful at this stage.
+— the R03 test candidates and the v0.3.0-beta.1 Public Beta once it ships — are
+signalled `EARLY ACCESS / NOT PRODUCTION-CERTIFIED`: they are not production
+certified, carry no support or compatibility promise, and there is no
+supported-version patch policy yet. Reports are nonetheless welcome — the
+feedback is most useful at this stage.
