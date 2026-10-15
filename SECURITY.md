@@ -18,13 +18,20 @@ anyway. Reports that turn out not to be vulnerabilities are still welcome.
 
 ## What is in scope
 
-This project is an early engineering scaffold. It contains no scanning,
-analysis or evidence capability, so the attack surface today is small and
-specific:
+The attack surface today includes, specifically:
 
+- the local control service and its API (`qiyan serve`, `internal/api`),
+  including the console's session/CSRF model, the hook decision endpoint and
+  the local folder-listing endpoints used by the project picker;
+- the PreToolUse hook (`qiyan hook pretooluse`) and the decision engine
+  (`internal/control`) — a bypass of an enforced decision is a vulnerability;
+- the Claude Code connector (`internal/connector`), including the settings
+  install/undo path and the probe;
+- the Safety Lab's scan and apply paths (`internal/lab`) — file writes and any
+  way to make it execute something it should not;
 - the CLI's argument handling in `cmd/qiyan`;
 - the GitHub Actions workflows in `.github/workflows/`, including the release
-  drill and its build-provenance attestation;
+  drill, the candidate build and their build-provenance attestations;
 - the repository's own supply chain — the Go module and the pinned GitHub
   Actions used by CI.
 
@@ -52,6 +59,8 @@ goodwill in both directions.
 
 ## Supported versions
 
-No version of this project has been released. There is nothing to patch yet;
-reports are nonetheless welcome, because the foundation is being built now and
-the feedback is most useful at this stage.
+No version of this project has been released as a product. R03 early-access
+candidates are test builds only (`EARLY ACCESS / TEST BUILD /
+NOT PRODUCTION-CERTIFIED`): there is nothing to patch on a supported-version
+basis yet. Reports are nonetheless welcome — the feedback is most useful at
+this stage.

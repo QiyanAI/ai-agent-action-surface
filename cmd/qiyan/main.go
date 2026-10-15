@@ -1,10 +1,10 @@
 // Command qiyan is the command-line entry point for the QiyanAI
-// ai-agent-action-surface project.
+// ai-agent-action-surface project: the local control service (`serve`), the
+// Claude Code PreToolUse hook, the connector, the three-role mission fleet
+// and the operator clients (status, agents, approvals, missions, connect).
 //
-// This is an early engineering scaffold. It deliberately implements only help
-// and version output: no scanning, analysis, evidence collection or agent-action
-// capability exists yet, and the program makes no claim to any. See
-// docs/scope-and-claims.md for the boundary this scaffold is held to.
+// What it does not do is stated next to what it does; see
+// docs/scope-and-claims.md for the exact boundary.
 package main
 
 import (
@@ -26,7 +26,7 @@ const programName = "qiyan"
 // repository: no tracked file ever contains the SHA of the commit that contains
 // it, which would be a self-referential hash.
 var (
-	version = "0.2.0-r02"
+	version = "0.3.0-r03"
 	commit  = "unknown"
 	built   = "unknown"
 )

@@ -1,0 +1,100 @@
+name: Candidate Build
+
+# Early-access TEST candidates for invited testers (R03-16). Honest boundary:
+# this workflow builds, checksums, attests and uploads workflow artifacts. It
+# NEVER creates a GitHub Release — not even a draft — and it publishes no
+# product version. A candidate is a bare CGO-free binary set labelled
+# EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED, bound to the exact
+# commit it was built from (the commit SHA is injected at build time and is
+# never written back into the tree).
+#
+# Permissions mirror the release drill's build job exactly (contents: read +
+# id-token/attestations for provenance signing); no new permission type is
+# introduced, and there is no write-capable job at all. Formal GitHub
+# releases remain release-drill.yml's draft flow and, beyond R03, the
+# maintainer's decision.
+on:
+  workflow_dispatch:
+    inputs:
+      version_label:
+        description: Version string injected into the candidates (also used in file names)
+        required: true
+        default: 0.3.0-r03-candidate
+      retention_days:
+        description: How long the artifact stays downloadable
+        required: true
+        default: "90"
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: build candidate artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read # read the source tree
+      id-token: write # OIDC token, required to sign the attestation
+      attestations: write # write the build-provenance record
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build candidates
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          version="${{ inputs.version_label }}"
+          commit="${GITHUB_SHA}"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "version   : ${version}"
+          echo "commit    : ${commit}"
+          echo "built     : ${built}"
+          echo "go        : $(go version)"
+
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%%/*}"
+            arch="${target##*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            out="dist/qiyan_${version}_${os}_${arch}${ext}"
+
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-X main.version=${version} -X main.commit=${commit} -X main.built=${built}" \
+              -o "$out" ./cmd/qiyan
+
+            echo "built ${out}"
+          done
+
+      - name: Record artifact identity
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum qiyan_* | tee SHA256SUMS
+          echo
+          ls -l qiyan_*
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: dist/*
+
+      - name: Upload candidates
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: r03-candidate-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
