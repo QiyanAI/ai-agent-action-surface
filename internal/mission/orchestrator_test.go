@@ -367,3 +367,58 @@ func TestRunWithNoStoreFailsInsteadOfPanicking(t *testing.T) {
 		t.Fatal("a storeless orchestrator must return an error")
 	}
 }
+
+func TestRunCancelYieldsCancelledState(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := testMission(t, st, domain.ModeControlledAuto)
+
+	br := &blockingRunner{fake: fakeRunner{}, started: make(chan struct{}), release: make(chan struct{})}
+	o := newTestOrchestrator(t, st)
+	o.NewSession = func(role domain.AgentRole, agent domain.Agent, task domain.Task, sid string) SessionRunner {
+		return br
+	}
+
+	r := NewRunRegistry()
+	ok, err := r.Start(m.ID, o)
+	if err != nil || !ok {
+		t.Fatalf("start: %v %v", ok, err)
+	}
+	select {
+	case <-br.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached its first session turn")
+	}
+	if !r.Cancel(m.ID) {
+		t.Fatal("cancel of a live run must succeed")
+	}
+	// The blocked session observes the cancellation; the run must end as
+	// cancelled, not as a failure.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		s, found := r.Status(m.ID)
+		if found && s.State != "running" {
+			if s.State != "cancelled" {
+				t.Fatalf("run state = %s (%s), want cancelled", s.State, s.Summary)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run did not reach a terminal state")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	got, _, _ := st.GetMission(m.ID)
+	if got.State != domain.MissionCancelled {
+		t.Fatalf("mission state = %s, want CANCELLED", got.State)
+	}
+	tasks, _ := st.TasksForMission(m.ID)
+	for _, task := range tasks {
+		if task.Role == domain.RolePlanner && task.State != domain.TaskCancelled {
+			t.Fatalf("planner task state = %s, want CANCELLED", task.State)
+		}
+	}
+}

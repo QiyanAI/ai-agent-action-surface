@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -153,6 +154,11 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "planning the mission"})
 	planText, err := o.runRole(ctx, m, planner, plannerTask, plannerPrompt(m, workdir), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.setStateTask(plannerTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user during planning")
+		}
 		o.setStateTask(plannerTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "planner session failed: "+err.Error())
@@ -167,11 +173,17 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "building per the plan"})
 	builderText, err := o.runRole(ctx, m, builder, builderTask, builderPrompt(m, workdir, planText), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.setStateTask(builderTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user while building; actions already allowed remain in the audit trail")
+		}
 		o.setStateTask(builderTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "builder session failed: "+err.Error())
 	}
 	o.recordBuilderArtifacts(builderTask)
+	status.Artifacts = o.artifactPaths(builderTask)
 	o.setStateTask(builderTask, domain.TaskCompleted)
 	o.emit(Event{Kind: "role-end", Role: string(domain.RoleBuilder), TaskID: builderTask.ID,
 		Text: "build complete"})
@@ -182,6 +194,11 @@ func (o *Orchestrator) Run(ctx context.Context, missionID domain.MissionID) (Run
 		Text: "reviewing the result"})
 	reviewText, err := o.runRole(ctx, m, reviewer, reviewerTask, reviewerPrompt(m, workdir, builderText), &status)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			o.setStateTask(reviewerTask, domain.TaskCancelled)
+			o.setMissionState(m, domain.MissionCancelled)
+			return end("cancelled", "run cancelled by the user during review")
+		}
 		o.setStateTask(reviewerTask, domain.TaskFailed)
 		o.setMissionState(m, domain.MissionFailed)
 		return end("failed", "reviewer session failed: "+err.Error())
@@ -468,6 +485,19 @@ func (o *Orchestrator) recordBuilderArtifacts(task domain.Task) {
 	t.Artifacts = arts
 	t.UpdatedAt = o.now()
 	_ = o.Store.PutTask(t)
+}
+
+// artifactPaths re-reads the task's recorded artifacts for the run status.
+func (o *Orchestrator) artifactPaths(task domain.Task) []string {
+	t, found, err := o.Store.GetTask(task.ID)
+	if err != nil || !found {
+		return nil
+	}
+	var paths []string
+	for _, a := range t.Artifacts {
+		paths = append(paths, a.Path)
+	}
+	return paths
 }
 
 // --- prompts ---
