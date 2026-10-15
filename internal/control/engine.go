@@ -203,7 +203,7 @@ func (e *Engine) gate(req Request, scope domain.Scope) (domain.Outcome, []domain
 		return domain.OutcomeRequireApproval, []domain.Reason{domain.NewReason(domain.ReasonDeleteOperation, "path", a.Path)}
 
 	case domain.ActionProcessExec:
-		class, program := ClassifyCommand(a.Command)
+		class, program := ClassifyCommand(a.Command, a.Cwd)
 		switch class {
 		case CmdSafe:
 			return domain.OutcomeAllow, nil

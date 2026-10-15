@@ -1,6 +1,9 @@
 package control
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/QiyanAI/ai-agent-action-surface/internal/domain"
@@ -87,8 +90,21 @@ var sensitivePrograms = map[string]bool{
 }
 
 // ClassifyCommand returns the class and resolved program name for a single
-// command line. Program is empty when the command cannot be tokenized.
-func ClassifyCommand(cmd string) (CommandClass, string) {
+// command line, using cwd for the Windows cwd-shadowing check. Program is
+// empty when the command cannot be tokenized.
+//
+// Two rules keep the "safe" verdict honest:
+//
+//  1. A first token containing a path separator or ~ is never classified by
+//     its base name: ./cat.bat is not cat, /usr/bin/ls is not verified to be
+//     ls. Path form means CmdUnrecognized, so it lands behind approval.
+//  2. On Windows, even a bare name resolves from the working directory
+//     first (cmd.exe/PATHEXT semantics), so `cat` can execute a planted
+//     ./cat.bat. When cwd is known and a same-named executable exists there
+//     — or cannot be ruled out — the command is CmdUnrecognized. When cwd is
+//     not declared, a bare name cannot be verified either; Windows commands
+//     without a declared cwd never classify as safe.
+func ClassifyCommand(cmd, cwd string) (CommandClass, string) {
 	trimmed := strings.TrimSpace(cmd)
 	if trimmed == "" {
 		return CmdUnrecognized, ""
@@ -103,16 +119,28 @@ func ClassifyCommand(cmd string) (CommandClass, string) {
 	}
 	prog := strings.ToLower(fields[0])
 	prog = strings.Trim(prog, `"'`)
-	// Strip any directory part and a Windows extension: /usr/bin/ls, .\ls,
-	// C:\Windows\System32\cmd.exe all classify by base name.
-	if i := strings.LastIndexAny(prog, `/\`); i >= 0 {
-		prog = prog[i+1:]
+	if prog == "" {
+		return CmdUnrecognized, ""
+	}
+	if strings.ContainsAny(prog, `/\`) || strings.HasPrefix(prog, "~") {
+		// Path form: never vouched for by base name (rule 1).
+		return CmdUnrecognized, baseName(prog)
 	}
 	prog = strings.TrimSuffix(prog, ".exe")
 	prog = strings.TrimSuffix(prog, ".cmd")
 	prog = strings.TrimSuffix(prog, ".bat")
 	if prog == "" {
 		return CmdUnrecognized, ""
+	}
+
+	// Windows cwd-first resolution (rule 2).
+	if runtime.GOOS == "windows" {
+		if cwd == "" {
+			return CmdUnrecognized, prog
+		}
+		if shadowed, err := programShadowedInCwd(prog, cwd); err != nil || shadowed {
+			return CmdUnrecognized, prog
+		}
 	}
 
 	if subs, ok := subcommandReadOnlyPrograms[prog]; ok {
@@ -129,6 +157,41 @@ func ClassifyCommand(cmd string) (CommandClass, string) {
 		return CmdSensitive, prog
 	}
 	return CmdUnrecognized, prog
+}
+
+// ExtractProgram returns the base program name of a command line for the
+// action's digest fields. It deliberately performs no trust classification.
+func ExtractProgram(cmd string) string {
+	fields := strings.Fields(strings.TrimSpace(cmd))
+	if len(fields) == 0 {
+		return ""
+	}
+	p := strings.ToLower(strings.Trim(fields[0], `"'`))
+	return baseName(p)
+}
+
+func baseName(p string) string {
+	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+		p = p[i+1:]
+	}
+	return p
+}
+
+// programShadowedInCwd reports whether cwd contains an executable that
+// Windows' resolution order would prefer over any PATH entry for this bare
+// program name. Any stat failure other than "not exist" counts as shadowing:
+// when in doubt, approval.
+func programShadowedInCwd(prog, cwd string) (bool, error) {
+	for _, ext := range []string{"", ".exe", ".cmd", ".bat", ".com"} {
+		_, err := os.Stat(filepath.Join(cwd, prog+ext))
+		if err == nil {
+			return true, nil
+		}
+		if !os.IsNotExist(err) {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // firstNonFlag returns the first token not starting with '-' or '/', lowercased

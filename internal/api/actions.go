@@ -56,8 +56,12 @@ func BuildClaudeCodeAction(toolName string, input json.RawMessage, cwd string) (
 		return fileAction(domain.ActionFileModify, "file_path"), nil
 	case "Bash":
 		cmd := str("command")
-		_, program := control.ClassifyCommand(cmd)
-		return domain.Action{Kind: domain.ActionProcessExec, Tool: toolName, Command: cmd, CommandProgram: program, Raw: cmd}, nil
+		return domain.Action{
+			Kind: domain.ActionProcessExec, Tool: toolName, Command: cmd,
+			CommandProgram: control.ExtractProgram(cmd),
+			Cwd:            domain.NormalizePath(cwd, ""),
+			Raw:            cmd,
+		}, nil
 	case "BashOutput":
 		return domain.Action{Kind: domain.ActionFileRead, Tool: toolName, Path: domain.NormalizePath(cwd, cwd)}, nil
 	case "KillShell":
@@ -93,6 +97,7 @@ type ActionPayload struct {
 	Tool           string `json:"tool"`
 	Path           string `json:"path,omitempty"`
 	Command        string `json:"command,omitempty"`
+	Cwd            string `json:"cwd,omitempty"`
 	URL            string `json:"url,omitempty"`
 	CredentialRef  string `json:"credentialRef,omitempty"`
 	DelegationTo   string `json:"delegationTo,omitempty"`
@@ -117,8 +122,10 @@ func (p ActionPayload) ToAction() domain.Action {
 		a.Path = domain.NormalizePath(p.Path, "")
 	}
 	if a.Kind == domain.ActionProcessExec && a.Command != "" {
-		_, program := control.ClassifyCommand(a.Command)
-		a.CommandProgram = program
+		a.CommandProgram = control.ExtractProgram(a.Command)
+	}
+	if p.Cwd != "" {
+		a.Cwd = domain.NormalizePath(p.Cwd, "")
 	}
 	if p.DelegationTo != "" {
 		a.DelegationTo = domain.AgentID(p.DelegationTo)
@@ -139,6 +146,7 @@ func ActionToPayload(a domain.Action) ActionPayload {
 		Tool:           a.Tool,
 		Path:           a.Path,
 		Command:        a.Command,
+		Cwd:            a.Cwd,
 		URL:            a.URL,
 		CredentialRef:  a.CredentialRef,
 		DelegationTo:   string(a.DelegationTo),

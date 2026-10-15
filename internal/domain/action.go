@@ -83,6 +83,12 @@ type Action struct {
 	// token), lowercased, e.g. "git", "npm", with any directory part stripped.
 	CommandProgram string
 
+	// Cwd is the working directory the command would run in. Classification
+	// uses it to detect Windows' cwd-first program resolution (a planted
+	// ./cat.bat shadows `cat`); an exec action without a declared cwd cannot
+	// be verified and stays behind approval on Windows.
+	Cwd string
+
 	// URL is the target of network.access, scheme+host+path, query stripped of
 	// values is NOT done here — the engine decides how much of a URL is
 	// meaningful for policy; the digest binds whatever was evaluated.
@@ -127,6 +133,7 @@ func (a Action) canonical() string {
 	field("path", a.Path)
 	field("command", a.Command)
 	field("program", a.CommandProgram)
+	field("cwd", a.Cwd)
 	field("url", a.URL)
 	field("cred", a.CredentialRef)
 	field("dto", string(a.DelegationTo))

@@ -1,6 +1,9 @@
 package control
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -90,7 +93,9 @@ func read(path string) domain.Action {
 }
 
 func bash(cmd string) domain.Action {
-	return domain.Action{Kind: domain.ActionProcessExec, Tool: "Bash", Command: cmd}
+	// Cwd set to the task's working directory, as the hook path does; this is
+	// what the Windows cwd-shadowing check evaluates.
+	return domain.Action{Kind: domain.ActionProcessExec, Tool: "Bash", Command: cmd, CommandProgram: ExtractProgram(cmd), Cwd: "C:/proj"}
 }
 
 // --- positive cases ---
@@ -499,19 +504,50 @@ func TestClassifyCommandTable(t *testing.T) {
 		{"git diff --stat", CmdSafe},
 		{"git push", CmdSensitive},
 		{"go run main.go", CmdSensitive},
-		{`C:\Windows\System32\cmd.exe /c dir`, CmdSensitive},
 		{"rm -rf x", CmdSensitive},
 		{"cat a | grep b", CmdUnrecognized},
 		{"echo $(whoami)", CmdUnrecognized},
 		{"myscript.sh", CmdUnrecognized},
-		{"./run.sh", CmdUnrecognized},
 		{"", CmdUnrecognized},
 		{"ls *.go", CmdUnrecognized}, // glob = shell expansion
+		// Path forms are never vouched for by base name: a planted
+		// ./cat.bat must not inherit cat's "safe" classification.
+		{"./cat.bat", CmdUnrecognized},
+		{"./ls", CmdUnrecognized},
+		{`C:\Windows\System32\cmd.exe /c dir`, CmdUnrecognized},
+		{"/usr/bin/ls", CmdUnrecognized},
+		{"../tools/go", CmdUnrecognized},
 	}
 	for _, c := range cases {
-		got, prog := ClassifyCommand(c.cmd)
+		got, prog := ClassifyCommand(c.cmd, "C:/nonexistent-cwd-for-tests")
 		if got != c.want {
 			t.Errorf("ClassifyCommand(%q) = %s (prog %q), want %s", c.cmd, got, prog, c.want)
 		}
+	}
+}
+
+// TestWindowsCwdShadowingRegression locks in the fix for the confirmed R02
+// review finding: on Windows, `cat` resolves from the working directory first,
+// so a planted ./cat.bat must demote the command from "safe" to unrecognized.
+// On other platforms there is no cwd-first resolution and the check is not
+// applied, so the test asserts the platform-correct behaviour.
+func TestWindowsCwdShadowingRegression(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cat.bat"), []byte("@echo off\nrm -rf /\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := ClassifyCommand("cat notes.txt", dir)
+	if runtime.GOOS == "windows" {
+		if got != CmdUnrecognized {
+			t.Fatalf("planted cat.bat must demote `cat` to unrecognized on Windows, got %s", got)
+		}
+	} else if got != CmdSafe {
+		t.Fatalf("non-Windows has no cwd-first resolution; `cat` stays safe, got %s", got)
+	}
+
+	// An empty cwd on Windows can never be verified as safe.
+	got, _ = ClassifyCommand("cat notes.txt", "")
+	if runtime.GOOS == "windows" && got != CmdUnrecognized {
+		t.Fatalf("bare command without a declared cwd must not classify as safe on Windows, got %s", got)
 	}
 }
