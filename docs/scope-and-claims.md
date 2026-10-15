@@ -40,9 +40,18 @@ the actual machine and records the measured tier.
 - **No promise to control commands Qiyan cannot interpret.** Unrecognized
   commands, unrecognized tools, path-form programs and shell metacharacters go
   to approval (or denial) — never to a silent allow.
-- **Command containment is curated, not general.** A small set of read-only
-  programs is allowed without asking, with their path arguments checked
-  against the authorized roots; everything else asks.
+- **Command containment is curated, not general.** Only commands whose
+  recognized behavior is proven free of side effects run without asking — a
+  small set of print-only tools (ls, cat, grep, …) with their path arguments
+  checked against the authorized roots, plus compiler-class subcommands that
+  do not execute project code (go build/vet/list) and content-free git
+  readers (status, rev-parse, …). Anything that can run code or change
+  configuration goes to your approval: this includes `go test` (it executes
+  the project's own test binaries), `go env -w/-u` (persistent configuration),
+  `date -s` / positional `date` and `hostname NAME` (system-state setters),
+  git content transformers (`log`, `diff`, `show`, `blame` — repository
+  configuration can make them execute helper programs), and flag forms that
+  run external helpers (`-vettool`, `-toolexec`, `-exec`).
 - **MCP servers are never started or contacted.** The lab reads their
   configuration only.
 - **No network force-blocking.** Outbound tool actions are gated (approval),

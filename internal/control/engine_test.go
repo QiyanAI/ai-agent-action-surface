@@ -119,7 +119,7 @@ func TestSafeCommandAllowedInAutonomousModes(t *testing.T) {
 	// companion mode even a read-only program waits for the user.
 	for _, mode := range []domain.AutonomyMode{domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
 		f := newFixture(t, mode)
-		for _, cmd := range []string{"go test ./...", "git status", "ls -la", "go build ./cmd/qiyan", "cat notes.md"} {
+		for _, cmd := range []string{"go build ./cmd/qiyan", "go vet ./...", "go list ./...", "git status", "ls -la", "cat notes.md"} {
 			if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
 				t.Errorf("mode %s: %q should be allowed, got %s", mode, cmd, got)
 			}
@@ -509,9 +509,25 @@ func TestClassifyCommandTable(t *testing.T) {
 		want CommandClass
 	}{
 		{"ls -la", CmdSafe},
-		{"go test ./...", CmdSafe},
 		{"go build ./cmd/qiyan", CmdSafe},
+		{"go vet ./...", CmdSafe},
+		{"go list ./...", CmdSafe},
+		{"go version", CmdSafe},
 		{"npm --version", CmdSafe},
+		// R02-SEC-01: project-code execution and configuration persistence
+		// are never auto-allowed.
+		{"go test ./...", CmdSensitive},
+		{"go test", CmdSensitive},
+		{"go env", CmdSensitive},
+		{"go env -w GOFLAGS=-mod=mod", CmdSensitive},
+		{"go env -u GOPATH", CmdSensitive},
+		{"go vet -vettool=/tmp/evil ./...", CmdSensitive},
+		// System-state setters without a flag to screen (positional forms).
+		{"date", CmdUnrecognized},
+		{"date -s 12:00", CmdUnrecognized},
+		{"hostname", CmdUnrecognized},
+		{"hostname newname", CmdUnrecognized},
+		{"uname -a", CmdSafe},
 		// Output-redirecting flags demote even curated programs.
 		{"go build -o bin/x ./cmd/x", CmdSensitive},
 		{"go test -coverprofile=cover.out ./...", CmdSensitive},
@@ -521,7 +537,14 @@ func TestClassifyCommandTable(t *testing.T) {
 		// `git -C log push` is `git push` from directory "log".
 		{"git -C log push", CmdSensitive},
 		{"git status", CmdSafe},
-		{"git diff --stat", CmdSafe},
+		{"git rev-parse HEAD", CmdSafe},
+		{"git shortlog -sn", CmdSafe},
+		// Git content transformers can execute configured helpers
+		// (textconv, diff.external, GIT_EXTERNAL_DIFF): approval only.
+		{"git log", CmdSensitive},
+		{"git diff --stat", CmdSensitive},
+		{"git show HEAD", CmdSensitive},
+		{"git blame main.go", CmdSensitive},
 		{"git push", CmdSensitive},
 		{"go run main.go", CmdSensitive},
 		{"rm -rf x", CmdSensitive},
@@ -670,5 +693,56 @@ func TestSafeCommandArgumentsStayInScope(t *testing.T) {
 	// A flag carrying an unresolvable path value cannot be vouched for.
 	if got := f.eval(t, bash("grep -f/outside/pats .")).Outcome; got != domain.OutcomeRequireApproval {
 		t.Fatalf("unresolvable path flag must require approval, got %s", got)
+	}
+}
+
+// Regression (R02-SEC-01): commands capable of executing project code or
+// persisting configuration must reach the approval gate in the autonomous
+// modes, while truly read-only operations keep flowing without friction.
+func TestSideEffectCommandsRequireApprovalInControlledAuto(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+
+	sideEffecting := []string{
+		"go test ./...",
+		"go test",
+		"go env -w GOFLAGS=-mod=mod",
+		"go env -u GOPATH",
+		"go env",
+		"go vet -vettool=/tmp/tool ./...",
+		"date -s 12:00",
+		"hostname newname",
+		"git log",
+		"git diff",
+		"git show HEAD",
+		"git blame main.go",
+	}
+	for _, cmd := range sideEffecting {
+		d := f.eval(t, bash(cmd))
+		if d.Outcome != domain.OutcomeRequireApproval {
+			t.Errorf("%q must require explicit approval, got %s", cmd, d.Outcome)
+			continue
+		}
+		if d.ApprovalID == "" {
+			t.Errorf("%q asked for approval but recorded none", cmd)
+		}
+	}
+
+	readOnly := []string{
+		"ls -la",
+		"cat notes.txt",
+		"grep TODO main.go",
+		"uname -a",
+		"go build ./...",
+		"go vet ./...",
+		"go list ./...",
+		"go version",
+		"git status",
+		"git rev-parse HEAD",
+		"git shortlog -sn",
+	}
+	for _, cmd := range readOnly {
+		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
+			t.Errorf("%q is verified read-only and should keep flowing, got %s", cmd, got)
+		}
 	}
 }

@@ -33,7 +33,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
                                      // agent.delegation | session.local | unknown
     "tool": "report.append",         // your tool's name; must be in the mission's allowlist
     "path": "D:/work/report.md",     // file.* kinds: absolute, forward slashes
-    "command": "go test ./...",      // process.exec
+    "command": "go build ./...",      // process.exec
     "cwd": "D:/work",                // process.exec: the directory it will run in
     "url": "https://…",              // network.access
     "credentialRef": "DEPLOY_TOKEN", // credential.use: the NAME, never a value

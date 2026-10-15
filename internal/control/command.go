@@ -19,13 +19,26 @@ import (
 // redirect output somewhere unknown — is gated behind explicit user approval.
 // The gate is the approval, not a claim of semantic understanding.
 //
-// Consequences of that honesty, applied deliberately after adversarial review:
+// Consequences of that honesty, applied deliberately after adversarial review
+// and tightened again for R02-SEC-01:
 //
+//   - Nothing is auto-allowed whose recognized behavior cannot be *proven*
+//     to be side-effect-free. Executing project code (go test), persisting
+//     configuration (go env -w/-u), setting the system clock (date -s, or
+//     BSD-style positional date) and setting the hostname (hostname NAME)
+//     are side effects this classifier cannot rule out, so those forms are
+//     NOT on the safe list and require explicit approval.
 //   - Programs that can write files through their own flags (sort -o,
 //     uniq in out, …) are NOT on the safe list at all.
 //   - Subcommand programs (go, git) are classified only after skipping flags
-//     that take a value, and any output-redirecting flag (-o, --output,
-//     -toolexec, …) demotes the command.
+//     that take a value, and any flag that redirects output (-o, --output,
+//     -toolexec, -vettool, …) or can run an external helper demotes the
+//     command.
+//   - Git subcommands that transform blob content (diff, show, log, blame)
+//     are not safe: repository configuration (.gitattributes textconv,
+//     diff.external, GIT_EXTERNAL_DIFF) can make them execute helper
+//     programs. Only content-free readers (status, rev-parse, ls-files,
+//     describe, shortlog) are kept.
 //   - An unknown flag before a subcommand demotes the command: it might have
 //     swallowed the real subcommand token.
 //   - Path-form programs (./x, /usr/bin/x, ..\\x) are never vouched for by
@@ -37,9 +50,12 @@ import (
 type CommandClass string
 
 const (
-	// CmdSafe: a curated program in a curated form — a read-only tool whose
-	// recognized usage cannot direct writes, or a build/test subcommand whose
-	// writes land in the working tree the scope already covers.
+	// CmdSafe: a curated program in a curated form whose recognized behavior
+	// is proven free of side effects — a print-only tool, or a compiler-class
+	// subcommand that inspects or compiles without running project code and
+	// whose default output lands in the working tree the scope already
+	// covers. Commands that run project code or persist configuration are
+	// never CmdSafe (R02-SEC-01).
 	CmdSafe CommandClass = "safe"
 	// CmdSensitive: a known high-impact program (delete, network, package
 	// management, process control, shell wrappers, interpreters), or a
@@ -55,27 +71,43 @@ const (
 const shellMetachars = ";|&`$><\n\r(){}[]*?~!"
 
 // readOnlyPrograms may run without approval. Every entry's recognized usage
-// only reads or prints: none of them offers a flag that writes a named file.
+// only reads or prints: none of them offers a flag or argument form that
+// writes a file or changes system state.
 //
 // Deliberately absent although superficially read-only: sort (-o writes),
-// uniq (second operand writes), and anything else with an output-file mode.
-// A build tool's default output goes to the working tree, which the scope
-// already covers, so go build/test remain "safe" only through the screened
-// subcommand path below.
+// uniq (second operand writes), date (-s / positional argument sets the
+// system clock on GNU and BSD forms alike), hostname (a positional NAME sets
+// the host name) — anything whose read-only claim cannot be proven for every
+// argument form. A build tool's default output goes to the working tree,
+// which the scope already covers, so go build/list/vet remain "safe" only
+// through the screened subcommand path below; go test and go env do not
+// (R02-SEC-01).
 var readOnlyPrograms = map[string]bool{
 	"ls": true, "dir": true, "pwd": true, "cd": true,
 	"cat": true, "head": true, "tail": true, "wc": true,
-	"grep": true, "echo": true, "date": true, "whoami": true,
-	"hostname": true, "uname": true, "which": true, "where": true,
+	"grep": true, "echo": true, "whoami": true,
+	"uname": true, "which": true, "where": true,
 	"true": true, "false": true, "test": true, "type": true,
 	"stat": true, "file": true, "diff": true,
 }
 
 // subcommandReadOnlyPrograms lists subcommands that may run without approval
 // once the surrounding flag structure has been verified.
+//
+// R02-SEC-01 boundary: a subcommand stays here only if it cannot execute
+// project code and cannot persist configuration.
+//
+//   - go: test runs the project's own test binaries (arbitrary code), and
+//     env has persistent write modes (-w/-u); both are demoted to sensitive.
+//     version/list/vet/build inspect or compile without running project
+//     code; vet's -vettool and the build flags that run external helpers are
+//     demoted by the flag screen below.
+//   - git: diff/show/log/blame can execute configured helper programs
+//     (textconv filters, diff.external, GIT_EXTERNAL_DIFF) because they
+//     transform blob content; only content-free readers remain.
 var subcommandReadOnlyPrograms = map[string]map[string]bool{
-	"go":   {"version": true, "list": true, "vet": true, "build": true, "test": true, "env": true},
-	"git":  {"status": true, "log": true, "diff": true, "show": true, "rev-parse": true, "ls-files": true, "describe": true, "blame": true, "shortlog": true},
+	"go":   {"version": true, "list": true, "vet": true, "build": true},
+	"git":  {"status": true, "rev-parse": true, "ls-files": true, "describe": true, "shortlog": true},
 	"npm":  {"--version": true, "-v": true},
 	"node": {"--version": true, "-v": true},
 }
@@ -88,12 +120,14 @@ var valueFlags = map[string]map[string]bool{
 	"go":  {"-C": true},
 }
 
-// outputFlags lists flag prefixes that can redirect a program's writes to a
-// caller-chosen location. Any occurrence demotes a would-be safe command:
-// the default output location (the working tree) is inside the scope, a
-// redirected one is not verified to be.
+// outputFlags lists flag prefixes that either redirect a program's writes to
+// a caller-chosen location or make it run an external helper. Any occurrence
+// demotes a would-be safe command: the default output location (the working
+// tree) is inside the scope, a redirected one is not verified to be — and an
+// external helper (go -toolexec/-vettool, go test -exec) is project-adjacent
+// code execution this classifier cannot vouch for.
 var outputFlags = []string{
-	"-o", "--output", "-toolexec", "-exec", "-coverprofile", "-cpuprofile",
+	"-o", "--output", "-toolexec", "-exec", "-vettool", "-coverprofile", "-cpuprofile",
 	"-memprofile", "-blockprofile", "-mutexprofile", "-trace", "-pgo",
 	"-overlay", "-modfile", "-C", "--git-dir", "--work-tree", "--exec-path",
 }

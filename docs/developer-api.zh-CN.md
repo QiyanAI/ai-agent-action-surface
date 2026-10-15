@@ -31,7 +31,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
                                      // agent.delegation | session.local | unknown
     "tool": "report.append",         // 你工具的名字；必须在任务的允许清单里
     "path": "D:/work/report.md",     // file.*：绝对路径、正斜杠
-    "command": "go test ./...",      // process.exec
+    "command": "go build ./...",      // process.exec
     "cwd": "D:/work",                // process.exec：命令将运行的工作目录
     "url": "https://…",              // network.access
     "credentialRef": "DEPLOY_TOKEN", // credential.use：只写名称，绝不写值
