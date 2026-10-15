@@ -53,6 +53,8 @@ Reproduce + observe:
 
 ![A real run paused on a real approval, the reason in plain words](images/mission-approval.png)
 
+![A finished real run: Completed, two shell attempts Stopped by Qiyan, REPORT.md produced](images/demo-a-team.png)
+
 ## Demo B — Before It Acts
 
 *The block happens before the action — and Qiyan says why.*
