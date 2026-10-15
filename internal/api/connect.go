@@ -124,6 +124,8 @@ func (s *Server) handleConnectApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Real probe: what this machine actually does, not what the version says.
+	// The probe outlives the server's ordinary WriteTimeout by design.
+	extendWriteDeadline(w, 6*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	probe, err := s.probe(ctx, det.Binary, exe, os.TempDir())
@@ -153,7 +155,7 @@ func (s *Server) handleConnectApply(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	if err := s.recordProbeCoverage(probe); err != nil {
+	if err := s.recordProbeCoverage(probe, req.ProjectDir); err != nil {
 		fail(w, err)
 		return
 	}
@@ -172,6 +174,32 @@ func (s *Server) handleConnectList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"installations": list})
+}
+
+// handleDetectClaude reports whether Claude Code is available to this
+// service and what its version implies; the measured tier still comes only
+// from a real probe. A missing binary is a normal 200 answer, not an error,
+// because the wizard renders it as guidance.
+func (s *Server) handleDetectClaude(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuth(w, r, authOperator, authUISession); !ok {
+		return
+	}
+	det, err := connector.Detect(r.URL.Query().Get("bin"))
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"found":        false,
+			"error":        err.Error(),
+			"supportFloor": connector.SupportFloor(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"found":           true,
+		"binary":          det.Binary,
+		"version":         det.Version,
+		"tierFromVersion": det.TierFromVersion,
+		"supportFloor":    connector.SupportFloor(),
+	})
 }
 
 func (s *Server) handleConnectRemove(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +227,7 @@ func (s *Server) handleConnectRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	// Coverage follows reality: this path is no longer protected.
 	row := domain.Coverage{
-		ID: domain.NewCoverageID(), Path: coveragePathPrefix("uninstalled") + dir,
+		ID: domain.NewCoverageID(), Path: coveragePathPrefix("uninstalled") + " (" + domain.NormalizePath(dir, "") + ")",
 		State: domain.CoverageUncovered, Basis: "integration removed at " + time.Now().UTC().Format(time.RFC3339),
 		CheckedAt: time.Now().UTC(),
 	}
@@ -212,9 +240,12 @@ func (s *Server) handleConnectRemove(w http.ResponseWriter, r *http.Request) {
 
 // recordProbeCoverage writes coverage rows straight from probe results: the
 // per-scenario facts and one summary row that is ENFORCED only when every
-// fail-closed scenario passed.
-func (s *Server) recordProbeCoverage(p connector.ProbeResult) error {
+// fail-closed scenario passed. Rows are scoped to the project they were
+// measured for — connecting a second project must never overwrite the first
+// project's evidence.
+func (s *Server) recordProbeCoverage(p connector.ProbeResult, projectDir string) error {
 	now := time.Now().UTC()
+	scope := " (" + domain.NormalizePath(projectDir, "") + ")"
 	type row struct {
 		suffix string
 		ok     bool
@@ -232,7 +263,7 @@ func (s *Server) recordProbeCoverage(p connector.ProbeResult) error {
 		}
 		c := domain.Coverage{
 			ID:        domain.NewCoverageID(),
-			Path:      coveragePathPrefix(p.Version) + "#" + r.suffix,
+			Path:      coveragePathPrefix(p.Version) + "#" + r.suffix + scope,
 			State:     state,
 			Basis:     r.basis + " (probe on this machine, " + now.Format(time.RFC3339) + ")",
 			CheckedAt: now,
@@ -250,7 +281,7 @@ func (s *Server) recordProbeCoverage(p connector.ProbeResult) error {
 	}
 	summary := domain.Coverage{
 		ID:        domain.NewCoverageID(),
-		Path:      coveragePathPrefix(p.Version) + "#summary",
+		Path:      coveragePathPrefix(p.Version) + "#summary" + scope,
 		State:     summaryState,
 		Basis:     "probe: deny=" + boolWord(p.DenyBlocked) + " failure=" + boolWord(p.FailureBlocks) + " allow=" + boolWord(p.AllowRuns) + " at " + now.Format(time.RFC3339),
 		CheckedAt: now,

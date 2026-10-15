@@ -243,9 +243,16 @@ func VerifyDenyRule(ctx context.Context, projectDir, claudeBin, rule string) (Ve
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	_ = cmd.Run()
+	runErr := cmd.Run()
 
 	text := out.String()
+	if ok, why := sessionCompleted(runErr, text); !ok {
+		// A session that never ran (or died) must never be judged as
+		// "blocked": the scratch file would survive for the wrong reason.
+		return VerifyResult{Rule: rule, Verified: false,
+			Evidence: fmt.Sprintf("probe with %s on %s: %s", det.Version, probe.command, firstWords(text, 160)),
+			Note:     why + "; whether the rule refused the command was not confirmed"}, nil
+	}
 	switch rule {
 	case "Bash(curl:*)":
 		blocked := strings.Contains(text, "BLOCKED") || !strings.Contains(text, "DONE")
@@ -258,6 +265,19 @@ func VerifyDenyRule(ctx context.Context, projectDir, claudeBin, rule string) (Ve
 			Evidence: fmt.Sprintf("probe with %s: the matching command was %s", det.Version, map[bool]string{true: "refused", false: "allowed"}[blocked]),
 			Note:     probe.harmless}, nil
 	}
+}
+
+// sessionCompleted reports whether the verification session produced a
+// result that may be interpreted. A failed or empty run is indeterminate,
+// not evidence that the rule blocked anything.
+func sessionCompleted(runErr error, text string) (bool, string) {
+	if runErr != nil {
+		return false, "the verification session failed: " + runErr.Error()
+	}
+	if strings.TrimSpace(text) == "" {
+		return false, "the verification session produced no result"
+	}
+	return true, ""
 }
 
 // --- helpers ---

@@ -2,6 +2,7 @@ package lab
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,5 +218,24 @@ func TestDenyPlanApplyAndUndo(t *testing.T) {
 	}
 	if !strings.Contains(string(raw2), "npm test") || !strings.Contains(string(raw2), "\"keep\"") {
 		t.Fatalf("undo must leave everything else alone:\n%s", raw2)
+	}
+}
+
+func TestVerificationSessionMustComplete(t *testing.T) {
+	// Regression: the probe used to ignore the command error and judge only
+	// the filesystem — a session that never ran marked the rule "verified"
+	// because its scratch file survived for the wrong reason.
+	if ok, why := sessionCompleted(nil, "result text"); !ok {
+		t.Fatalf("a completed session must be interpretable: %s", why)
+	}
+	if ok, why := sessionCompleted(errors.New("exit status 1"), "Error: cannot launch"); ok {
+		t.Fatal("a failed session must not be judged as blocked")
+	} else if !strings.Contains(why, "failed") {
+		t.Fatalf("the reason must say the session failed: %q", why)
+	}
+	if ok, why := sessionCompleted(nil, "   \n"); ok {
+		t.Fatal("an empty result must not be judged as blocked")
+	} else if !strings.Contains(why, "no result") {
+		t.Fatalf("the reason must say there was no result: %q", why)
 	}
 }

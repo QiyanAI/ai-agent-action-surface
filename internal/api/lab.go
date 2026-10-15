@@ -106,10 +106,14 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify each rule with a real, harmless probe and record the outcome.
+	// The probes run real Claude Code sessions and outlive the ordinary
+	// WriteTimeout by design.
 	resp := labApplyResp{Applied: suggestion.AddDeny, Changes: plan.Changes,
 		SettingsPath: plan.SettingsPath, BackupPath: plan.BackupPath}
+	extendWriteDeadline(w, 5*time.Minute)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
 	defer cancel()
+	projectScope := domain.NormalizePath(req.ProjectDir, "")
 	for _, rule := range suggestion.AddDeny {
 		vr, err := lab.VerifyDenyRule(ctx, req.ProjectDir, req.ClaudeBin, rule)
 		if err != nil {
@@ -125,7 +129,7 @@ func (s *Server) handleLabApply(w http.ResponseWriter, r *http.Request) {
 			basis = vr.Note
 		}
 		if err := s.Store.PutCoverage(domain.Coverage{
-			ID: domain.NewCoverageID(), Path: "claude-code/permission-deny/" + rule,
+			ID: domain.NewCoverageID(), Path: "claude-code/permission-deny/" + rule + " (" + projectScope + ")",
 			State: state, Basis: basis, CheckedAt: time.Now().UTC(),
 		}); err != nil {
 			fail(w, err)
