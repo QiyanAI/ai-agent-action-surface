@@ -115,6 +115,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/decisions", s.handleDecisions)
 	s.mux.HandleFunc("GET /v1/coverage", s.handleCoverage)
 
+	// Safety Lab.
+	s.mux.HandleFunc("POST /v1/lab/scan", s.handleLabScan)
+	s.mux.HandleFunc("POST /v1/lab/apply", s.handleLabApply)
+	s.mux.HandleFunc("POST /v1/lab/undo", s.handleLabUndo)
+
 	// Mission runs (three-role fleet).
 	s.mux.HandleFunc("POST /v1/missions/{id}/run", s.handleMissionRun)
 	s.mux.HandleFunc("GET /v1/missions/{id}/run", s.handleMissionRunStatus)
