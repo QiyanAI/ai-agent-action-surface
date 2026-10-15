@@ -436,3 +436,27 @@ func TestUIServesEmbeddedConsole(t *testing.T) {
 		t.Fatalf("missing asset must 404, got %d", resp2.StatusCode)
 	}
 }
+
+func TestPlaygroundScenariosServeInertContent(t *testing.T) {
+	f := newAPIFixture(t)
+	// Auth required.
+	if resp, _ := f.do(t, "GET", "/v1/playground/scenarios", "", nil, nil); resp.StatusCode != 401 {
+		t.Fatalf("scenarios require auth, got %d", resp.StatusCode)
+	}
+	resp, body := f.do(t, "GET", "/v1/playground/scenarios", f.opTok, nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("scenarios: %d", resp.StatusCode)
+	}
+	list, _ := body["scenarios"].([]any)
+	if len(list) < 3 {
+		t.Fatalf("expected demo + two training scenarios, got %d", len(list))
+	}
+	note, _ := body["note"].(string)
+	if !strings.Contains(note, "synthetic") {
+		t.Fatalf("the payload must label itself synthetic: %q", note)
+	}
+	first, _ := list[0].(map[string]any)
+	if first["kind"] != "demo" {
+		t.Fatalf("first scenario should be the demo, got %v", first["kind"])
+	}
+}

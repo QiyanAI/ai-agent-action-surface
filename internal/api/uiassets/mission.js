@@ -185,6 +185,7 @@ async function refreshMap() {
     map.append(el("p", { class: "muted" }, "—"));
     return;
   }
+  state.lastDecisions = all;
   const counts = {};
   for (const rec of all) {
     const key = rec._role + "|" + rec.action.tool + "|" + rec.outcome;
@@ -218,18 +219,43 @@ async function refreshMap() {
 function renderResults() {
   const area = document.getElementById("results");
   clear(area);
-  let any = false;
+  let fileCount = 0;
   const list = el("ul", {});
   for (const task of state.tasks) {
     for (const a of task.artifacts || []) {
-      any = true;
+      fileCount++;
       list.append(el("li", {}, el("span", { class: "mono" }, a.path)));
     }
   }
-  if (any) {
+  if (fileCount > 0) {
     area.append(el("p", {}, t("artifacts")), list);
   } else {
     area.append(el("p", { class: "muted" }, "—"));
+  }
+
+  // Share card after a completed mission: counts only, built from the
+  // recorded decisions already shown on this page.
+  const missionState = document.getElementById("state").textContent;
+  if (missionState === "COMPLETED" && state.lastDecisions) {
+    const counts = { steps: state.lastDecisions.length, allowed: 0, blocked: 0, approved: 0, denied: 0, files: fileCount, decisions: state.lastDecisions.length };
+    for (const rec of state.lastDecisions) {
+      if (rec.outcome === "ALLOW") counts.allowed++;
+      if (rec.outcome === "DENY") counts.blocked++;
+    }
+    for (const rec of state.lastDecisions) {
+      for (const r of rec.reasons || []) {
+        if (r.code === "user_approved") counts.approved++;
+        if (r.code === "user_denied") counts.denied++;
+      }
+    }
+    const btn = el("button", {}, t("demo_create_card"));
+    const box = el("div", {});
+    btn.addEventListener("click", () => {
+      showShareCard(box, buildShareStats("mission",
+        [t("fleet_planner"), t("fleet_builder"), t("fleet_reviewer")], counts));
+      btn.disabled = true;
+    });
+    area.append(el("div", { class: "row" }, btn), box);
   }
 }
 
