@@ -505,6 +505,23 @@ func (s *Server) handleSessionBind(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, domain.ErrNotFound, "task not found")
 		return
 	}
+	// Binding a runtime session starts the task: this is the moment an agent
+	// begins acting on it, and the lifecycle says so (CREATED|READY →
+	// RUNNING). Terminal tasks cannot be bound again.
+	if t.State == domain.TaskCreated || t.State == domain.TaskReady {
+		t.State = domain.TaskRunning
+		if t.StartedAt.IsZero() {
+			t.StartedAt = time.Now().UTC()
+		}
+		if err := s.Store.PutTask(t); err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	if t.State != domain.TaskRunning && t.State != domain.TaskWaitingApproval {
+		writeError(w, http.StatusConflict, domain.ErrConflict, "task in state %s cannot be bound", t.State)
+		return
+	}
 	b := store.SessionBinding{
 		SessionID: req.SessionID, Runtime: req.Runtime,
 		MissionID: t.MissionID, TaskID: t.ID, AgentID: domain.AgentID(req.AgentID),

@@ -77,9 +77,25 @@ func TestHelpNamesEveryImplementedVerb(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, verb := range []string{"help", "version", "serve", "hook", "status", "agents", "approvals", "approve", "deny", "mission"} {
+	for _, verb := range []string{"help", "version", "serve", "hook", "status", "agents", "approvals", "approve", "deny", "mission", "task", "session"} {
 		if !strings.Contains(stdout, verb) {
 			t.Errorf("help output does not name the %q verb:\n%s", verb, stdout)
+		}
+	}
+}
+
+// The approval ID may appear before or after flags; both orders must reach
+// the request and fail with "no service" (exit 1), never a usage error (2).
+func TestApproveAcceptsIDBeforeAndAfterFlags(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"approve", "ap_test", "--state-dir", dir},
+		{"approve", "--state-dir", dir, "ap_test"},
+		{"deny", "ap_test", "--state-dir", dir},
+	} {
+		_, stderr, code := invoke(args...)
+		if code != 1 {
+			t.Errorf("%v: exit = %d, want 1 (no service), stderr=%q", args, code, stderr)
 		}
 	}
 }
