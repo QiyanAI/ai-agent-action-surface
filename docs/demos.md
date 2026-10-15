@@ -47,13 +47,11 @@ Reproduce + observe:
 
 - the three sessions: watch the console's run area as the roles take turns;
 - the gate: `qiyan approvals list` while the run is paused (or the console);
-- the evidence: `GET /v1/decisions?task=ta_…` (or the console's action map) —
+- the evidence: `GET /v1/decisions?task=ta_…` (console: Developers entry) —
   each row carries outcome, structured reasons and `coverage`;
 - the artifact: `REPORT.md` in your scratch project.
 
 ![A real run paused on a real approval, the reason in plain words](images/mission-approval.png)
-
-![A finished real run: Completed, two shell attempts Stopped by Qiyan, REPORT.md produced](images/demo-a-team.png)
 
 ## Demo B — Before It Acts
 
@@ -76,9 +74,8 @@ when the gate asks instead of denying — carries the full reason text.
 Reproduce + observe:
 
 - `qiyan approvals list` — the pending item names the exact tool and target;
-- `GET /v1/decisions?task=ta_…` (or the console's action map / Developers
-  entry) — the DENY rows with `write_by_readonly` / `path_outside_scope` and
-  their parameters;
+- `qiyan decisions --task ta_…` (or the console) — the DENY rows with
+  `write_by_readonly` / `path_outside_scope` and their parameters;
 - the fail-closed line: stop `qiyan serve` and watch a hooked session refuse
   to run tools (exit 2) rather than act without a decision.
 
@@ -99,25 +96,21 @@ only, **no private imports**) and that is the whole integration:
 qiyan serve                                  # 127.0.0.1:8760
 qiyan agents add --name DemoHost --role builder     # prints ag_… + token once
 qiyan mission create --goal "host demo" --root D:/work/demo-scratch \
-    --tool note.read --tool report.append --tool tmp.cleanup --tool mail.send \
-    --kind network.access
+    --tool note.read --tool report.append
 qiyan task create --mission mi_… --role builder --agent ag_… --title "host work"
 qiyan session bind --task ta_… --agent ag_… --session demo-1
 go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN \
     --mission mi_… --task ta_… --workdir D:/work/demo-scratch
 ```
 
-What you see, step by step: an out-of-scope **read** is `DENY`-ed
-(`path_outside_scope`) and **not executed**; an in-scope read and an in-scope
-append are `ALLOW`-ed and executed; removing the scratch file becomes
-`REQUIRE_APPROVAL` (`delete_operation`) and the external notification another
-(`external_network`), each waiting for you in the console — and after each
-approval the identical retry executes **exactly once**. Stop `qiyan serve`
-mid-run and the host stops too: it treats an unreachable control service as
-*denied* (the contract states this obligation explicitly; without a decision
-in time it reports "still waiting → not executed"). `--rogue` adds one write
-with **no** control call, so you can see the coverage table never marks that
-path protected.
+What you see: an in-scope read is `ALLOW`-ed and executed; an out-of-scope
+write is `DENY`-ed and **not executed**; a sensitive step becomes
+`REQUIRE_APPROVAL`, waits for you in the console, and after your approval the
+identical retry executes **exactly once**; stop `qiyan serve` mid-run and the
+host stops too — it treats an unreachable control service as *denied* (the
+contract now states this obligation explicitly). `--rogue` adds one write with
+**no** control call, so you can see the coverage table never marks that path
+protected.
 
 **Ecosystem honesty:** this demonstrates *our* reference host working. Real
 third-party adoption is a separate fact and stays **NOT VALIDATED** until an
@@ -133,8 +126,5 @@ outside developer completes the R04-02 script in
 - Synthetic: "The built-in 60-second demo — synthetic content, labelled DEMO
   in the console; nothing in it is a real run."
 
-_These walks were executed on 2026-10-16 with the R04 rehearsal build
-(`qiyan 0.3.0-r04-test`, three-role mission + reference host on Windows 11,
-Claude Code 2.1.301 measured `enforced`); the raw transcripts and decision
-exports go with the R04 acceptance record, and the release-day re-shoot swaps
-in the shipped `v0.3.0-beta.1` binary and its figures._
+_These walks were executed on <DATE> with the R04 build; the raw transcripts
+and decision exports are listed in the acceptance record._
