@@ -62,6 +62,11 @@ type Decision struct {
 	Reasons      []Reason
 	ActionDigest string
 
+	// The requester context, stored with every decision for audit.
+	MissionID MissionID
+	TaskID    TaskID
+	AgentID   AgentID
+
 	// Mode is the autonomy mode in force when the decision was made, and
 	// Coverage records whether the deciding path can actually enforce anything
 	// (ENFORCED) or only observe. A decision on an OBSERVED-only path must not

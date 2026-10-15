@@ -59,6 +59,13 @@ func (k ActionKind) Mutation() bool {
 type Action struct {
 	Kind ActionKind
 
+	// Tool is the enforcement path's tool name (e.g. "Edit", "Bash",
+	// "note.append"). It is part of the action's identity: an approval for
+	// "change this file via Edit" must not authorize the same file change via
+	// a shell command — different tool, different risk, so the digest binds it
+	// and the scope's tool allowlist checks it.
+	Tool string
+
 	// Path is the target of file.* kinds. Callers must pass it already
 	// normalized (absolute, forward slashes, cleaned) via NormalizePath.
 	Path string
@@ -110,6 +117,7 @@ func (a Action) canonical() string {
 		b.WriteByte(';')
 	}
 	field("kind", string(a.Kind))
+	field("tool", a.Tool)
 	field("path", a.Path)
 	field("command", a.Command)
 	field("program", a.CommandProgram)

@@ -103,6 +103,11 @@ type ApprovalRequest struct {
 	Role      AgentRole
 	Mode      AutonomyMode
 
+	// ScopeDigest is the mission scope in force when the approval was
+	// requested; the authorization produced on approval binds it, so a scope
+	// change between asking and approving invalidates the grant.
+	ScopeDigest string
+
 	// Reasons explains, in structured form, why approval is required — the
 	// same codes the decision carries, so the two can never drift.
 	Reasons []Reason

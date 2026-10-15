@@ -49,6 +49,20 @@ func NormalizePath(p, base string) string {
 	return q
 }
 
+// IsAbsoluteNormalized reports whether p is already in the absolute,
+// forward-slash form NormalizePath produces. The control engine requires
+// normalized inputs and treats anything else as unrecognized rather than
+// guessing.
+func IsAbsoluteNormalized(p string) bool {
+	if p == "" {
+		return false
+	}
+	if strings.ContainsRune(p, '\\') {
+		return false
+	}
+	return isAbsSlash(p)
+}
+
 // isAbsSlash reports whether a forward-slash path is absolute in the current
 // platform's terms: "/x", "C:/x" or "//server/share/x".
 func isAbsSlash(q string) bool {

@@ -121,6 +121,12 @@ type Task struct {
 	AgentID   AgentID // the concrete agent instance executing it, when assigned
 	DependsOn []TaskID
 
+	// Budget accounting maintained by the orchestrator as real events arrive.
+	// StartedAt is zero until the task first runs; StepsUsed counts controlled
+	// actions the engine has allowed for this task.
+	StartedAt time.Time
+	StepsUsed int
+
 	Artifacts []Artifact
 	CreatedAt time.Time
 	UpdatedAt time.Time
