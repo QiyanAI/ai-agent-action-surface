@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="app.css">
+<title>Qiyan</title>
+</head>
+<body data-page="nav_home">
+<header class="top">
+  <span class="brand">Qiyan</span>
+  <nav id="topnav"></nav>
+  <span class="grow"></span>
+  <button id="lang-toggle">中文</button>
+</header>
+<main id="main">
+  <h1 data-i18n="app_title"></h1>
+  <p class="lead" data-i18n="home_lead"></p>
+
+  <div id="status" class="notice" style="display:none"></div>
+
+  <div class="grid cards" style="margin-top:20px">
+    <div class="card">
+      <h3 data-i18n="home_card_team_t"></h3>
+      <p data-i18n="home_card_team_d"></p>
+      <a class="go" href="mission.html" data-i18n="home_card_team_b"></a>
+    </div>
+    <div class="card">
+      <h3 data-i18n="home_card_lab_t"></h3>
+      <p data-i18n="home_card_lab_d"></p>
+      <a class="go" href="lab.html" data-i18n="home_card_lab_b"></a>
+    </div>
+    <div class="card">
+      <h3 data-i18n="home_card_dev_t"></h3>
+      <p data-i18n="home_card_dev_d"></p>
+      <a class="go" href="dev.html" data-i18n="home_card_dev_b"></a>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px; border-color: var(--demo)">
+    <div class="row">
+      <span class="badge demo" data-i18n="demo_badge"></span>
+    </div>
+    <h3 data-i18n="home_demo_t"></h3>
+    <p data-i18n="home_demo_d"></p>
+    <a class="go" href="demo.html" data-i18n="home_demo_b" style="background: var(--demo)"></a>
+  </div>
+
+  <p class="foot" data-i18n="foot_local"></p>
+</main>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script src="index.js"></script>
+</body>
+</html>

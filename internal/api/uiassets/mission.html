@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="app.css">
+<title>Qiyan — Mission Control</title>
+</head>
+<body data-page="nav_team">
+<header class="top">
+  <span class="brand">Qiyan</span>
+  <nav id="topnav"></nav>
+  <span class="grow"></span>
+  <button id="lang-toggle">中文</button>
+</header>
+<main id="main">
+  <h1 data-i18n="mission_title"></h1>
+  <p class="lead" data-i18n="mission_lead"></p>
+
+  <div class="card" id="create-card">
+    <div class="field">
+      <label data-i18n="mission_goal"></label>
+      <textarea id="goal" placeholder="…"></textarea>
+    </div>
+    <div class="field">
+      <label data-i18n="mission_mode"></label>
+      <select id="mode">
+        <option value="controlled_auto" data-i18n="mode_controlled_auto"></option>
+        <option value="companion" data-i18n="mode_companion"></option>
+        <option value="bounded_autonomy" data-i18n="mode_bounded_autonomy"></option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:2">
+        <label data-i18n="mission_root"></label>
+        <input type="text" id="root" placeholder="D:/work/project">
+      </div>
+      <div class="field" style="flex:1">
+        <label data-i18n="mission_steps"></label>
+        <input type="number" id="steps" value="80" min="1">
+      </div>
+      <div class="field" style="flex:1">
+        <label data-i18n="mission_minutes"></label>
+        <input type="number" id="minutes" value="60" min="1">
+      </div>
+    </div>
+    <div class="row">
+      <button id="create" class="primary" data-i18n="mission_create"></button>
+      <button id="start" data-i18n="mission_start" disabled></button>
+    </div>
+    <p class="muted"><a href="connect.html">Claude Code <span data-i18n="connect_title"></span> →</a></p>
+  </div>
+
+  <div id="run-area" style="display:none">
+    <h2><span data-i18n="mission_state"></span>: <span id="state" class="badge"></span></h2>
+    <div class="fleet" id="fleet"></div>
+
+    <h2 data-i18n="approvals_title"></h2>
+    <div id="approvals"></div>
+
+    <h2 data-i18n="action_map"></h2>
+    <p class="muted" data-i18n="action_map_note"></p>
+    <div class="map" id="map"></div>
+
+    <h2 data-i18n="results_title"></h2>
+    <div id="results"></div>
+
+    <h2 data-i18n="mission_timeline"></h2>
+    <div class="timeline" id="timeline"></div>
+  </div>
+</main>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script src="share.js"></script>
+<script src="mission.js"></script>
+</body>
+</html>

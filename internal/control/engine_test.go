@@ -1,0 +1,620 @@
+package control
+
+import (
+	"testing"
+	"time"
+
+	"github.com/QiyanAI/ai-agent-action-surface/internal/domain"
+)
+
+// --- fixtures ---
+
+type fixture struct {
+	engine   *Engine
+	store    *InMemoryStore
+	mission  domain.Mission
+	task     domain.Task
+	builder  domain.Agent
+	planner  domain.Agent
+	reviewer domain.Agent
+	now      time.Time
+}
+
+func newFixture(t *testing.T, mode domain.AutonomyMode) *fixture {
+	t.Helper()
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	store := NewInMemoryStore()
+	e := New(store)
+
+	builder := domain.Agent{ID: domain.NewAgentID(), Name: "Builder", Role: domain.RoleBuilder}
+	planner := domain.Agent{ID: domain.NewAgentID(), Name: "Planner", Role: domain.RolePlanner, ReadOnly: true}
+	reviewer := domain.Agent{ID: domain.NewAgentID(), Name: "Reviewer", Role: domain.RoleReviewer, ReadOnly: true}
+
+	scope := domain.Scope{
+		Roots: []string{"C:/proj"},
+		AllowedKinds: []domain.ActionKind{
+			domain.ActionFileRead, domain.ActionFileCreate, domain.ActionFileModify, domain.ActionFileDelete,
+			domain.ActionProcessExec, domain.ActionNetwork, domain.ActionCredentialUse,
+			domain.ActionExternalState, domain.ActionDelegation,
+		},
+		AllowedTools: []string{"Read", "Write", "Edit", "Bash", "WebFetch", "Task", "note.append"},
+		MaxSteps:     50,
+		MaxRuntime:   time.Hour,
+	}
+	mission := domain.Mission{
+		ID:     domain.NewMissionID(),
+		Goal:   "test mission",
+		Policy: domain.Policy{Mode: mode, Scope: scope},
+		State:  domain.MissionRunning,
+	}
+	task := domain.Task{
+		ID:        domain.NewTaskID(),
+		MissionID: mission.ID,
+		Role:      domain.RoleBuilder,
+		State:     domain.TaskRunning,
+		AgentID:   builder.ID,
+		StartedAt: now,
+	}
+	return &fixture{
+		engine: e, store: store, mission: mission, task: task,
+		builder: builder, planner: planner, reviewer: reviewer, now: now,
+	}
+}
+
+func (f *fixture) roster() []domain.Agent {
+	return []domain.Agent{f.builder, f.planner, f.reviewer}
+}
+
+func (f *fixture) req(a domain.Action) Request {
+	return Request{
+		Mission: f.mission, Task: f.task, Agent: f.builder, Action: a,
+		Agents: f.roster(), Now: f.now,
+	}
+}
+
+func (f *fixture) eval(t *testing.T, a domain.Action) domain.Decision {
+	t.Helper()
+	d, err := f.engine.Evaluate(f.req(a))
+	if err != nil {
+		t.Fatalf("Evaluate(%v) unexpected error: %v", a.Kind, err)
+	}
+	return d
+}
+
+func write(path string) domain.Action {
+	return domain.Action{Kind: domain.ActionFileModify, Tool: "Edit", Path: path}
+}
+
+func read(path string) domain.Action {
+	return domain.Action{Kind: domain.ActionFileRead, Tool: "Read", Path: path}
+}
+
+func bash(cmd string) domain.Action {
+	// Cwd set to the task's working directory, as the hook path does; this is
+	// what the Windows cwd-shadowing check evaluates.
+	return domain.Action{Kind: domain.ActionProcessExec, Tool: "Bash", Command: cmd, CommandProgram: ExtractProgram(cmd), Cwd: "C:/proj"}
+}
+
+// --- positive cases ---
+
+func TestReadInsideScopeAllowed(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	if got := f.eval(t, read("C:/proj/a.txt")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("in-scope read should allow, got %s", got)
+	}
+}
+
+func TestWriteAllowedInControlledAuto(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("in-scope write should allow in controlled-auto, got %s", got)
+	}
+}
+
+// --- negative / gating cases ---
+
+func TestWriteOutsideScopeDenied(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	d := f.eval(t, write("C:/elsewhere/evil.txt"))
+	if d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("out-of-scope write must deny, got %s", d.Outcome)
+	}
+	if d.Reasons[0].Code != domain.ReasonPathOutsideScope {
+		t.Fatalf("wrong reason: %v", d.Reasons[0].Code)
+	}
+}
+
+func TestUnnormalizedPathDeniedNotGuessed(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	for _, p := range []string{`C:\proj\a.txt`, "proj/a.txt", "../proj/a.txt", ""} {
+		if got := f.eval(t, write(p)).Outcome; got != domain.OutcomeDeny {
+			t.Errorf("path %q must deny (never guess), got %s", p, got)
+		}
+	}
+}
+
+func TestDeleteWaitsForUserInEveryMode(t *testing.T) {
+	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+		f := newFixture(t, mode)
+		a := domain.Action{Kind: domain.ActionFileDelete, Tool: "Bash", Path: "C:/proj/old.txt"}
+		if got := f.eval(t, a).Outcome; got != domain.OutcomeRequireApproval {
+			t.Errorf("mode %s: delete must require approval, got %s", mode, got)
+		}
+	}
+}
+
+func TestSensitiveAndUnrecognizedCommandsRequireApproval(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	cmds := []string{
+		"rm -rf build",         // sensitive program
+		"git push origin main", // non-curated subcommand
+		"npm install",          // package manager
+		"cat a.txt > b.txt",    // redirection metachar
+		"rm x && rm y",         // compound
+		"frobnicate --all",     // unknown program
+		"python3 script.py",    // interpreter
+	}
+	for _, c := range cmds {
+		if got := f.eval(t, bash(c)).Outcome; got != domain.OutcomeRequireApproval {
+			t.Errorf("%q must require approval, got %s", c, got)
+		}
+	}
+}
+
+func TestNetworkCredentialExternalStateRequireApproval(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	actions := []domain.Action{
+		{Kind: domain.ActionNetwork, Tool: "WebFetch", URL: "https://example.com"},
+		{Kind: domain.ActionCredentialUse, Tool: "note.append", CredentialRef: "DEPLOY_TOKEN"},
+		{Kind: domain.ActionExternalState, Tool: "note.append", URL: "https://api.example.com/orders"},
+	}
+	for _, a := range actions {
+		if got := f.eval(t, a).Outcome; got != domain.OutcomeRequireApproval {
+			t.Errorf("%v must require approval, got %s", a.Kind, got)
+		}
+	}
+}
+
+func TestIdentityMismatchDenied(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	req := f.req(read("C:/proj/a.txt"))
+	req.Agent = f.reviewer // task is assigned to the builder
+	d, err := f.engine.Evaluate(req)
+	if err != nil || d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("impersonation must deny, got %s err=%v", d.Outcome, err)
+	}
+}
+
+func TestAgentOutsideRosterDenied(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	stranger := f.builder
+	stranger.ID = domain.NewAgentID()
+	stranger.Name = "Stranger"
+	f.task.AgentID = stranger.ID // sneaks into the task binding
+	req := f.req(read("C:/proj/a.txt"))
+	req.Task = f.task
+	req.Agent = stranger
+	d, err := f.engine.Evaluate(req)
+	if err != nil || d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("agent outside the mission roster must deny, got %s err=%v", d.Outcome, err)
+	}
+}
+
+func TestReadOnlyRoleCannotWriteEvenWithApproval(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	f.task.AgentID = f.planner.ID
+	req := f.req(write("C:/proj/a.txt"))
+	req.Agent = f.planner
+	d, err := f.engine.Evaluate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Outcome != domain.OutcomeDeny || d.Reasons[0].Code != domain.ReasonWriteByReadOnly {
+		t.Fatalf("read-only write must deny with write_by_readonly, got %s %v", d.Outcome, d.Reasons)
+	}
+}
+
+func TestBudgetStopsTheTask(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	f.task.StepsUsed = f.mission.Policy.Scope.MaxSteps
+	req := f.req(read("C:/proj/a.txt"))
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("spent step budget must deny, got %s", d.Outcome)
+	}
+
+	f2 := newFixture(t, domain.ModeBoundedAutonomy)
+	f2.task.StartedAt = f2.now.Add(-2 * time.Hour)
+	req2 := f2.req(read("C:/proj/a.txt"))
+	if d, _ := f2.engine.Evaluate(req2); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("expired runtime budget must deny, got %s", d.Outcome)
+	}
+}
+
+func TestCancelledTaskDenied(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	f.task.State = domain.TaskCancelled
+	req := f.req(read("C:/proj/a.txt"))
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("cancelled task must deny, got %s", d.Outcome)
+	}
+}
+
+func TestToolAndKindScope(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	outsideTool := read("C:/proj/a.txt")
+	outsideTool.Tool = "Mystery"
+	if d := f.eval(t, outsideTool); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("tool outside allowlist must deny, got %s", d.Outcome)
+	}
+
+	f2 := newFixture(t, domain.ModeControlledAuto)
+	f2.mission.Policy.Scope.AllowedKinds = []domain.ActionKind{domain.ActionFileRead}
+	if d := f2.eval(t, write("C:/proj/a.txt")); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("kind outside scope must deny, got %s", d.Outcome)
+	}
+}
+
+func TestUnknownActionNeverAllowed(t *testing.T) {
+	f := newFixture(t, domain.ModeBoundedAutonomy)
+	// A mission must opt in to the unknown kind explicitly to get the
+	// approval gate for it; without that opt-in the structural check denies.
+	f.mission.Policy.Scope.AllowedKinds = append(f.mission.Policy.Scope.AllowedKinds, domain.ActionUnknown)
+	a := domain.Action{Kind: domain.ActionUnknown, Tool: "note.append", Raw: "unclassifiable"}
+	if got := f.eval(t, a).Outcome; got != domain.OutcomeRequireApproval {
+		t.Fatalf("unknown kind in scope must at most require approval, got %s", got)
+	}
+
+	f2 := newFixture(t, domain.ModeBoundedAutonomy)
+	f2.mission.Policy.Scope.AllowedKinds = []domain.ActionKind{domain.ActionFileRead}
+	if got := f2.eval(t, a).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("unknown kind outside scope must deny, got %s", got)
+	}
+}
+
+// --- approval lifecycle ---
+
+func TestCompanionWriteApprovalHappyPath(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/src/a.go"))
+	if d.Outcome != domain.OutcomeRequireApproval || d.ApprovalID == "" {
+		t.Fatalf("companion write must ask with an approval ID, got %s id=%q", d.Outcome, d.ApprovalID)
+	}
+
+	// Agents cannot approve their own actions.
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceAgent, AgentID: f.builder.ID}, f.now); domain.ClassOf(err) != domain.ErrIdentityConflict {
+		t.Fatalf("agent self-approval must be rejected, got %v", err)
+	}
+
+	ap, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser, Label: "owner"}, f.now)
+	if err != nil {
+		t.Fatalf("user approval failed: %v", err)
+	}
+	if ap.Authorization == nil {
+		t.Fatal("approved approval must carry an authorization")
+	}
+
+	// The approved retry runs the authorized action — the retry itself carries
+	// nothing but the same tool call; the grant is claimed by exact binding.
+	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("approved retry must allow, got %s", got)
+	}
+
+	// The grant is single-use: the next identical attempt is gated again,
+	// with a fresh approval to decide on.
+	d3 := f.eval(t, write("C:/proj/src/a.go"))
+	if d3.Outcome != domain.OutcomeRequireApproval {
+		t.Fatalf("a consumed grant must not authorize again, got %s", d3.Outcome)
+	}
+	if d3.ApprovalID == d.ApprovalID {
+		t.Fatal("the fresh request must be a new approval, not the spent one")
+	}
+}
+
+func TestApprovalCannotBeSwappedToAnotherTarget(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/src/a.go"))
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	// A different target is a different action: the grant for a.go must not
+	// slide over to OTHER.go (S06). It gets gated like any new action.
+	if got := f.eval(t, write("C:/proj/src/OTHER.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("approval must not transfer to a changed action (S06)")
+	}
+	// And the untouched grant still authorizes exactly its own action once.
+	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("the original grant should still authorize its exact action, got %s", got)
+	}
+}
+
+func TestApprovalInvalidatedByScopeChange(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/a.go"))
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	f.mission.Policy.Scope.Roots = []string{"C:/proj", "C:/extra"} // widened afterwards
+	if got := f.eval(t, write("C:/proj/a.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("scope change must invalidate the grant, it must not silently apply")
+	}
+}
+
+func TestExpiredAuthorizationDenied(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/a.go"))
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(domain.AuthorizationTTL + time.Minute)
+	if got := f.eval(t, write("C:/proj/a.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("expired grant must not authorize")
+	}
+}
+
+func TestDeniedApprovalMeansDeniedRetries(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/a.go"))
+	if _, err := f.engine.Decide(d.ApprovalID, false, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	d2 := f.eval(t, write("C:/proj/a.go"))
+	if d2.Outcome != domain.OutcomeDeny {
+		t.Fatalf("retry after user denial must deny, got %s", d2.Outcome)
+	}
+	if d2.Reasons[0].Code != domain.ReasonUserDenied {
+		t.Fatalf("reason should be user_denied, got %v", d2.Reasons[0].Code)
+	}
+}
+
+func TestPendingApprovalIsDedupedAndRefreshed(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d1 := f.eval(t, write("C:/proj/a.go"))
+	d2 := f.eval(t, write("C:/proj/a.go"))
+	if d1.ApprovalID != d2.ApprovalID {
+		t.Fatalf("a second evaluation of the same pending action must reuse the approval")
+	}
+	// After expiry the next ask is a fresh request.
+	f.now = f.now.Add(domain.ApprovalTTL + time.Minute)
+	d3 := f.eval(t, write("C:/proj/a.go"))
+	if d3.ApprovalID == d1.ApprovalID {
+		t.Fatalf("expired approval must not be reused")
+	}
+}
+
+func TestExpiredApprovalCannotBeApprovedLater(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	d := f.eval(t, write("C:/proj/a.go"))
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now.Add(domain.ApprovalTTL+time.Minute)); domain.ClassOf(err) != domain.ErrConflict {
+		t.Fatalf("late approval must be refused, got %v", err)
+	}
+}
+
+// --- delegation ---
+
+func delegation(from domain.Agent, to domain.AgentID, kind domain.ActionKind) domain.Action {
+	return domain.Action{Kind: domain.ActionDelegation, Tool: "Task", DelegationTo: to, DelegationKind: kind}
+}
+
+func TestDelegationPipelineAllowsAndEscalationDenies(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+
+	// Planner → Builder handing off a write: allowed even though planner is
+	// read-only (delegation is coordination, and the builder's own authority
+	// is checked at the builder's own evaluation).
+	f.task.AgentID = f.planner.ID
+	req := f.req(delegation(f.planner, f.builder.ID, domain.ActionFileModify))
+	req.Agent = f.planner
+	if d, err := f.engine.Evaluate(req); err != nil || d.Outcome != domain.OutcomeAllow {
+		t.Fatalf("planner→builder handoff should allow, got %s err=%v", d.Outcome, err)
+	}
+
+	// Reviewer → Builder feedback loop: allowed.
+	f.task.AgentID = f.reviewer.ID
+	req = f.req(delegation(f.reviewer, f.builder.ID, domain.ActionFileModify))
+	req.Agent = f.reviewer
+	if d, err := f.engine.Evaluate(req); err != nil || d.Outcome != domain.OutcomeAllow {
+		t.Fatalf("reviewer→builder feedback should allow, got %s err=%v", d.Outcome, err)
+	}
+
+	// Builder → Planner: not a supported transition.
+	f.task.AgentID = f.builder.ID
+	if d := f.eval(t, delegation(f.builder, f.planner.ID, domain.ActionFileRead)); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("builder→planner must deny, got %s", d.Outcome)
+	}
+
+	// Mutating work aimed at a read-only receiver: escalation.
+	f.task.AgentID = f.planner.ID
+	req = f.req(delegation(f.planner, f.reviewer.ID, domain.ActionFileModify))
+	req.Agent = f.planner
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("mutating delegation to a read-only receiver must deny, got %s", d.Outcome)
+	}
+
+	// Delegating a kind the mission scope does not cover.
+	scopeless := f.mission
+	scopeless.Policy.Scope.AllowedKinds = []domain.ActionKind{domain.ActionFileRead}
+	req = f.req(delegation(f.planner, f.builder.ID, domain.ActionFileModify))
+	req.Agent = f.planner
+	req.Mission = scopeless
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("delegating outside the mission envelope must deny, got %s", d.Outcome)
+	}
+
+	// Delegating the right to delegate, and delegating to strangers: denied.
+	req = f.req(delegation(f.planner, f.builder.ID, domain.ActionDelegation))
+	req.Agent = f.planner
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("transitive delegation must deny, got %s", d.Outcome)
+	}
+	req = f.req(delegation(f.planner, domain.NewAgentID(), domain.ActionFileModify))
+	req.Agent = f.planner
+	if d, _ := f.engine.Evaluate(req); d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("delegation to an unknown agent must deny, got %s", d.Outcome)
+	}
+}
+
+// --- fail-closed plumbing ---
+
+type brokenAuditStore struct{ *InMemoryStore }
+
+func (b brokenAuditStore) AppendDecision(domain.Decision, domain.Action) error {
+	return domain.NewError(domain.ErrStoreCorrupted, "disk on fire")
+}
+
+func TestAuditFailureDeniesTheAction(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	e := New(brokenAuditStore{f.store})
+	d, err := e.Evaluate(f.req(read("C:/proj/a.txt")))
+	if err == nil {
+		t.Fatal("unauditable decision must surface an error")
+	}
+	if d.Outcome != domain.OutcomeDeny {
+		t.Fatalf("unauditable decision must deny, got %s", d.Outcome)
+	}
+	if domain.FailClosedOutcome(err) != domain.OutcomeDeny {
+		t.Fatal("callers mapping the error must also deny")
+	}
+}
+
+// --- command classifier unit table ---
+
+// Regression: an absent roster must not silently remove the identity check.
+func TestRosterRequiredAlways(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	req := f.req(read("C:/proj/a.txt"))
+	req.Agents = nil
+	if d, _ := f.engine.Evaluate(req); d.Outcome == domain.OutcomeAllow {
+		t.Fatalf("missing roster must deny, got %s", d.Outcome)
+	}
+}
+
+// Regression: kind=session.local is transport-declared; it must pass only
+// for tools that are actually known session bookkeeping.
+func TestSessionLocalRequiresBookkeepingTool(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	f.mission.Policy.Scope.AllowedTools = append(f.mission.Policy.Scope.AllowedTools, "TodoWrite", "mystery.tool")
+	f.mission.Policy.Scope.AllowedKinds = append(f.mission.Policy.Scope.AllowedKinds, domain.ActionSessionLocal)
+
+	real := domain.Action{Kind: domain.ActionSessionLocal, Tool: "TodoWrite"}
+	if got := f.eval(t, real).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("known bookkeeping tool must be allowed, got %s", got)
+	}
+	fake := domain.Action{Kind: domain.ActionSessionLocal, Tool: "mystery.tool"}
+	if got := f.eval(t, fake).Outcome; got != domain.OutcomeRequireApproval {
+		t.Fatalf("a declared session.local on an unknown tool must not skip the gate, got %s", got)
+	}
+}
+
+// Regression: the engine must stamp the coverage the transport declared, and
+// UNKNOWN when nothing was declared — never a hardcoded ENFORCED.
+func TestCoverageStampedFromRequest(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+
+	req := f.req(read("C:/proj/a.txt"))
+	req.Coverage = domain.CoverageEnforced
+	if d, _ := f.engine.Evaluate(req); d.Coverage != domain.CoverageEnforced {
+		t.Fatalf("declared coverage must be stamped, got %s", d.Coverage)
+	}
+	req2 := f.req(read("C:/proj/a.txt"))
+	if d, _ := f.engine.Evaluate(req2); d.Coverage != domain.CoverageUnknown {
+		t.Fatalf("undeclared coverage must be UNKNOWN, got %s", d.Coverage)
+	}
+}
+
+// Regression: swapping the content of an approved edit must not reuse the
+// approval (the hook transport binds content; the API path binds it when the
+// host supplies contentDigest).
+func TestApprovalContentSwapDoesNotReuseGrant(t *testing.T) {
+	f := newFixture(t, domain.ModeCompanion)
+	a := write("C:/proj/src/a.go")
+	a.ContentDigest = domain.ContentDigestOf("old", "approved change", "")
+	d := f.eval(t, a)
+	if d.Outcome != domain.OutcomeRequireApproval {
+		t.Fatalf("companion write must ask, got %s", d.Outcome)
+	}
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	swapped := write("C:/proj/src/a.go")
+	swapped.ContentDigest = domain.ContentDigestOf("old", "DIFFERENT change", "")
+	if got := f.eval(t, swapped).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("different content must not reuse the approval")
+	}
+	// The original content still claims its grant exactly once.
+	if got := f.eval(t, a).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("the exact approved content should run once, got %s", got)
+	}
+}
+
+// --- R02-SEC-01 final boundary: no name-based auto-allow for shell ---
+
+func TestShellCommandsAlwaysRequireApproval(t *testing.T) {
+	cmds := []string{
+		"file --compile -m qiyanmagic out.mgc", // final review's counterexample: writes a compiled magic file
+		"file -m qiyanmagic note.txt",
+		"ls -la",
+		"cat note.txt",
+		"grep TODO main.go",
+		"diff a.txt b.txt",
+		"git status",
+		"git -c core.fsmonitor=/tmp/hook status",
+		"git --config-env=core.fsmonitor=FSMON status",
+		"go test ./...",
+		"go build ./...",
+		"date -s 12:00",
+		"hostname newname",
+		"npm --version",
+	}
+	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+		f := newFixture(t, mode)
+		for _, cmd := range cmds {
+			d := f.eval(t, bash(cmd))
+			if d.Outcome != domain.OutcomeRequireApproval {
+				t.Errorf("mode %s: shell command %q must require approval, got %s", mode, cmd, d.Outcome)
+				continue
+			}
+			if d.ApprovalID == "" {
+				t.Errorf("mode %s: %q asked for approval but recorded none", mode, cmd)
+			}
+		}
+	}
+}
+
+func TestNativeSemanticToolsStayAutomatic(t *testing.T) {
+	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+		f := newFixture(t, mode)
+		f.mission.Policy.Scope.AllowedTools = append(f.mission.Policy.Scope.AllowedTools, "Glob", "Grep", "TodoWrite")
+		f.mission.Policy.Scope.AllowedKinds = append(f.mission.Policy.Scope.AllowedKinds, domain.ActionSessionLocal)
+		for _, tool := range []string{"Read", "Glob", "Grep"} {
+			a := domain.Action{Kind: domain.ActionFileRead, Tool: tool, Path: "C:/proj/src/main.go"}
+			if got := f.eval(t, a).Outcome; got != domain.OutcomeAllow {
+				t.Errorf("mode %s: native read tool %s inside scope must keep flowing, got %s", mode, tool, got)
+			}
+		}
+		if got := f.eval(t, domain.Action{Kind: domain.ActionSessionLocal, Tool: "TodoWrite"}).Outcome; got != domain.OutcomeAllow {
+			t.Errorf("mode %s: session bookkeeping must keep passing, got %s", mode, got)
+		}
+	}
+}
+
+func TestScopeDenialsStillApplyToReadsAndShell(t *testing.T) {
+	f := newFixture(t, domain.ModeControlledAuto)
+	// Native read outside the roots: hard DENY (preserved through the rework).
+	d := f.eval(t, read("C:/elsewhere/secret.txt"))
+	if d.Outcome != domain.OutcomeDeny || d.Reasons[0].Code != domain.ReasonPathOutsideScope {
+		t.Fatalf("out-of-scope read must stay a hard DENY, got %s %v", d.Outcome, d.Reasons)
+	}
+	// A shell action whose kind is outside the mission scope: DENY, not ask.
+	f2 := newFixture(t, domain.ModeControlledAuto)
+	f2.mission.Policy.Scope.AllowedKinds = []domain.ActionKind{domain.ActionFileRead, domain.ActionFileModify, domain.ActionSessionLocal}
+	if got := f2.eval(t, bash("ls -la")).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("exec outside mission scope must DENY, got %s", got)
+	}
+	// A tool outside the allowlist: DENY.
+	f3 := newFixture(t, domain.ModeControlledAuto)
+	bogus := bash("ls")
+	bogus.Tool = "Mystery"
+	if got := f3.eval(t, bogus).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("tool outside the allowlist must DENY, got %s", got)
+	}
+}

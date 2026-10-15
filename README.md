@@ -1,72 +1,91 @@
-# qiyan — Evidence-Backed AI Agent Action Surface & Blast Radius Map
+# Qiyan — Open Agent Mission & Control
 
-> **Early engineering scaffold — no product capability works yet.**
->
-> This repository is at its first step. It holds a Go module, a command-line
-> entry point that implements only `help` and `version`, and the CI, security and
-> release plumbing needed to develop safely in the open. It does not scan,
-> analyse, observe or map anything today. The exact boundary of what is and is
-> not implemented is written down in [docs/scope-and-claims.md](docs/scope-and-claims.md).
+**Your AI team. Your rules.**
 
-## Intended direction
+Qiyan is a local, open platform for running AI agents under verifiable
+pre-execution control: connect your existing AI software, hand a mission to a
+small crew of agents, watch every action, and decide what they may do. Safety
+is enforced *before* something runs — not described afterwards.
 
-The long-term goal is an *evidence-backed action surface* for AI agents: a tool
-that makes the actions an agent can take — and the blast radius of those
-actions — visible and auditable, with every claim traceable to evidence.
+Everything is local-first: no account, no cloud, no telemetry. English and
+中文 are both first-class.
 
-That direction is a **goal, not a description of current behaviour.** No part of
-it is implemented in this repository, and this README does not claim otherwise.
+## Try it in one minute (no account needed)
 
-## Current status
+```sh
+go build -o qiyan ./cmd/qiyan
+./qiyan serve
+```
+
+Open the printed console URL and choose **Try the demo** — a synthetic
+walkthrough (clearly labelled DEMO) showing a three-agent crew, one action
+blocked before it happens, and one decision you make yourself.
+
+## Put a real project under control
+
+```sh
+# 1. Connect Claude Code in a project (runs a live probe on your machine first)
+./qiyan connect claude --project D:/work/my-project
+
+# 2. Create a mission and run the three-role fleet
+./qiyan mission create --goal "Write hello.txt and a short report" \
+    --root D:/work/my-project
+./qiyan run --mission mi_...
+
+# Decisions that need you appear in the console (and in `qiyan approvals list`)
+```
+
+The console gives you: **Mission Control** (fleet cards, live timeline, action
+map, inline approvals), the **Safety Lab** (inspect an agent's declared
+abilities with evidence, preview improvements, apply them, and verify the
+result with a real probe), the **Connect wizard**, the **demo**, and a
+**Developer entry** for the open Control API.
+
+## What is verified today
 
 | Area | State |
 | --- | --- |
-| CLI | `qiyan help` and `qiyan version` only |
-| Scan / analysis engine | not implemented |
-| Evidence model | not implemented |
-| Blast-radius mapping | not implemented |
-| Published release | **none** — no version of this project has been released |
-| Public API / compatibility promise | none — nothing is stable yet |
+| Local control service, engine, durable state | implemented, tested, verified in live runs |
+| PreToolUse gate with real pre-execution blocking | verified on real Claude Code runs (deny blocks; failure modes block with `onFailure: "block"` on versions ≥ 2.1.295) |
+| Three-role real fleet (Planner → Builder → Reviewer) | verified: live run producing real files with real control decisions |
+| Safety Lab including verified fixes | verified: scan → apply → real probe → ENFORCED coverage record → undo |
+| Reference Agent Host (public API only) | verified: allow / deny / approval / rogue-bypass demonstration |
+| Demo & training | synthetic, interactive, data-layer-separated from real events |
 
-## Build and run
+Every claim above is bounded in
+[Docs: scope and claims](docs/scope-and-claims.md) — what is **not** claimed
+(no OS sandbox, no arbitrary-shell semantic control, no other runtimes, no
+network force-blocking) is written down there with equal precision.
 
-Requires Go 1.27 or later.
+## Honest limits (short list)
 
-```sh
-git clone https://github.com/QiyanAI/ai-agent-action-surface.git
-cd ai-agent-action-surface
-go build ./cmd/qiyan
-./qiyan help
-./qiyan version
+- Only **Claude Code** is a supported runtime, and only from **2.1.295** for
+  fail-closed protection (the connector detects and says so; the probe is the
+  judge, never the version number).
+- Qiyan's path checks are lexical and scope-based — they raise real, verified
+  gates, but they are not an operating-system sandbox.
+- Commands Qiyan cannot interpret go to your approval; they are never silently
+  allowed.
+
+## Repository layout
+
+```
+cmd/qiyan        the CLI: serve / hook / connect / run / lab / demo clients
+cmd/qiyanhost    the independent reference Agent Host (public API only)
+internal/domain  identities, states, actions, policy, evidence, coverage
+internal/control the single action-decision engine
+internal/store   durable local state (single writer: serve)
+internal/api     the versioned local Control API + embedded console
+internal/connector  Claude Code detection, live probe, settings install/undo
+internal/mission    the three-role fleet orchestrator
+internal/lab        the Agent Safety Lab
+internal/playground synthetic demo & training content (inert by construction)
 ```
 
-Check the working tree:
+Developer documentation for the API: [docs/developer-api.md](docs/developer-api.md)
+· 中文说明见 [README.zh-CN.md](README.zh-CN.md)。
 
-```sh
-go vet ./...
-go test ./...
-```
+## Security and license
 
-The build is standard-library only. The module has no third-party dependencies,
-so it compiles with the Go toolchain alone and no module downloads.
-
-## Security
-
-Please report suspected vulnerabilities privately rather than in a public issue.
-See [SECURITY.md](SECURITY.md) for the reporting channel and what to expect.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions are welcome, but note that
-the project is a single-maintainer effort in its engineering-foundation phase;
-changes are expected to arrive by pull request and to pass CI.
-
-## Licence
-
-Apache License 2.0 — see [LICENSE](LICENSE).
-
-Copyright 2026 QiyanAI.
-
----
-
-[中文说明](README.zh-CN.md)
+Apache-2.0. Standard library only. See [SECURITY.md](SECURITY.md) and
+[docs/scope-and-claims.md](docs/scope-and-claims.md).
