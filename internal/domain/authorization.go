@@ -8,14 +8,16 @@ import "time"
 // expiry (book §12.1). Nothing about it is reusable: not for another agent,
 // not for another task, not for a bigger action, not even for the same action
 // twice (a denied-then-retried action needs a fresh approval).
+//
+// There is deliberately no bearer token here: a grant is claimed by matching
+// its exact binding inside the trusted store, so a retrying agent (which
+// simply re-issues its tool call) holds nothing it could lose, forge or
+// replay. The store consumes the grant atomically on the first matching
+// claim.
 type Authorization struct {
 	// ID equals the ApprovalID that produced it — the audit link between
 	// "user said yes" and "this execution was authorized".
 	ID ApprovalID
-
-	// Nonce is the opaque, single-use token value the retrying action presents.
-	// It authorizes only the OneAction described by ActionDigest.
-	Nonce string
 
 	MissionID MissionID
 	TaskID    TaskID

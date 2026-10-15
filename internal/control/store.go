@@ -32,10 +32,12 @@ type Store interface {
 
 	// CreateAuthorization stores a grant produced by an approval.
 	CreateAuthorization(domain.Authorization) error
-	// ClaimAuthorization atomically returns the authorization for nonce and
-	// marks it consumed. It fails with ErrAuthorizationReplayed if already
-	// spent and ErrApprovalNotFound if unknown — never a silent zero value.
-	ClaimAuthorization(nonce string, now time.Time) (domain.Authorization, error)
+	// ClaimAuthorizationForAction atomically finds the unconsumed, unexpired
+	// grant whose binding (task, agent, action digest, scope digest) matches
+	// exactly, marks it consumed and returns the pre-claim snapshot for
+	// Authorization.Check. ErrApprovalNotFound when nothing matches — the
+	// caller then proceeds to normal gating, never to a silent allow.
+	ClaimAuthorizationForAction(task domain.TaskID, agent domain.AgentID, actionDigest, scopeDigest string, now time.Time) (domain.Authorization, error)
 
 	// AppendDecision records every decision (all outcomes) for audit.
 	AppendDecision(d domain.Decision, action domain.Action) error
@@ -50,7 +52,7 @@ type InMemoryStore struct {
 	mu          sync.Mutex
 	approvals   map[domain.ApprovalID]domain.ApprovalRequest
 	approvalSeq []domain.ApprovalID // insertion order, for LatestApprovalForAction
-	auths       map[string]domain.Authorization
+	auths       map[domain.ApprovalID]domain.Authorization
 	decisions   []storedDecision
 	steps       map[domain.TaskID]int
 }
@@ -64,7 +66,7 @@ type storedDecision struct {
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
 		approvals: map[domain.ApprovalID]domain.ApprovalRequest{},
-		auths:     map[string]domain.Authorization{},
+		auths:     map[domain.ApprovalID]domain.Authorization{},
 		steps:     map[domain.TaskID]int{},
 	}
 }
@@ -117,34 +119,37 @@ func (s *InMemoryStore) UpdateApproval(a domain.ApprovalRequest) error {
 func (s *InMemoryStore) CreateAuthorization(a domain.Authorization) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.auths[a.Nonce]; exists {
-		return domain.NewError(domain.ErrConflict, "authorization nonce already exists")
+	if _, exists := s.auths[a.ID]; exists {
+		return domain.NewError(domain.ErrConflict, "authorization %s already exists", a.ID)
 	}
-	s.auths[a.Nonce] = a
+	s.auths[a.ID] = a
 	return nil
 }
 
-// ClaimAuthorization implements Store.
+// ClaimAuthorizationForAction implements Store.
 //
 // The returned value is the pre-claim snapshot (ConsumedAt nil) so the caller
 // can still run Authorization.Check against it; single-use is already
-// guaranteed by this atomic transition. Failures return zero value plus an
+// guaranteed by this atomic transition. Failures return a zero value plus an
 // error — never a zero-value authorization that looks valid.
-func (s *InMemoryStore) ClaimAuthorization(nonce string, now time.Time) (domain.Authorization, error) {
+func (s *InMemoryStore) ClaimAuthorizationForAction(task domain.TaskID, agent domain.AgentID, actionDigest, scopeDigest string, now time.Time) (domain.Authorization, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	stored, ok := s.auths[nonce]
-	if !ok {
-		return domain.Authorization{}, domain.NewError(domain.ErrApprovalNotFound, "no authorization for this token")
+	for id, stored := range s.auths {
+		if stored.TaskID != task || stored.AgentID != agent ||
+			stored.ActionDigest != actionDigest || stored.ScopeDigest != scopeDigest {
+			continue
+		}
+		if stored.ConsumedAt != nil || now.After(stored.ExpiresAt) {
+			continue
+		}
+		snapshot := stored // pre-claim, ConsumedAt nil, for Check
+		t := now
+		stored.ConsumedAt = &t
+		s.auths[id] = stored
+		return snapshot, nil
 	}
-	if stored.ConsumedAt != nil {
-		return domain.Authorization{}, domain.NewError(domain.ErrAuthorizationReplayed, "authorization already used at %s", stored.ConsumedAt.Format(time.RFC3339))
-	}
-	claimed := stored
-	t := now
-	stored.ConsumedAt = &t
-	s.auths[nonce] = stored
-	return claimed, nil
+	return domain.Authorization{}, domain.NewError(domain.ErrApprovalNotFound, "no unconsumed authorization matches this action")
 }
 
 // AppendDecision implements Store.

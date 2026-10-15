@@ -35,14 +35,12 @@ func (e *Engine) now(req Request) time.Time {
 }
 
 // Request is one decision request. Mission, Task and Agent are the requester
-// context the transport layer resolved; Action is already normalized;
-// Nonce optionally presents a previously granted single-use authorization.
+// context the transport layer resolved; Action is already normalized.
 type Request struct {
 	Mission domain.Mission
 	Task    domain.Task
 	Agent   domain.Agent
 	Action  domain.Action
-	Nonce   string
 
 	// Agents is the mission roster (the fleet plus any registered external
 	// agents). Delegation targets are validated against it.
@@ -144,26 +142,26 @@ func (e *Engine) Evaluate(req Request) (domain.Decision, error) {
 		}
 	}
 
-	// --- Approved-retry path: a presented nonce must be genuine, bound and
-	// unspent. A failed claim is a hard denial — never a silent downgrade to
-	// re-asking. ---
+	// --- Approved-retry path: an unconsumed grant matching this exact action
+	// satisfies the sensitivity that would otherwise gate it. The claim is
+	// atomic and single-use; a store failure here denies, never falls through
+	// to gating. ---
 
-	if req.Nonce != "" {
-		auth, err := e.Store.ClaimAuthorization(req.Nonce, now)
-		if err != nil {
-			reasons := reasonsOf(err)
-			return finish(domain.FailClosedOutcome(err), reasons...)
+	auth, err := e.Store.ClaimAuthorizationForAction(req.Task.ID, req.Agent.ID, d.ActionDigest, scope.ScopeDigest(), now)
+	if err == nil {
+		// Defense in depth: the claim already matched the binding, but Check
+		// re-validates every field (including expiry) against live values.
+		if cerr := auth.Check(now, a, req.Mission.ID, req.Task.ID, req.Agent.ID, scope); cerr != nil {
+			return finish(domain.FailClosedOutcome(cerr), reasonsOf(cerr)...)
 		}
-		if err := auth.Check(now, a, req.Mission.ID, req.Task.ID, req.Agent.ID, scope); err != nil {
-			reasons := reasonsOf(err)
-			return finish(domain.FailClosedOutcome(err), reasons...)
-		}
-		// The sensitivity that required approval is satisfied; grant.
 		if err := e.Store.IncrementSteps(req.Task.ID); err != nil {
 			return finish(domain.OutcomeDeny, domain.NewReason(domain.ReasonControlUnavailable, "stage", "budget"))
 		}
 		return finish(domain.OutcomeAllow,
 			domain.NewReason(domain.ReasonUserApproved, "approval", string(auth.ID)))
+	}
+	if domain.ClassOf(err) != domain.ErrApprovalNotFound {
+		return finish(domain.OutcomeDeny, reasonsOf(err)...)
 	}
 
 	// --- Policy gating for everything else. ---
@@ -369,7 +367,6 @@ func (e *Engine) Decide(approvalID domain.ApprovalID, approve bool, by domain.Ac
 
 	auth := domain.Authorization{
 		ID:           ap.ID,
-		Nonce:        domain.NewNonce(),
 		MissionID:    ap.MissionID,
 		TaskID:       ap.TaskID,
 		AgentID:      ap.AgentID,

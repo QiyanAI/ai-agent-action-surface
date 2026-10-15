@@ -68,13 +68,3 @@ func NewEvidenceID() EvidenceID       { return EvidenceID(newSortableID("ev")) }
 func NewDelegationID() DelegationID   { return DelegationID(newSortableID("dl")) }
 func NewCoverageID() CoverageID       { return CoverageID(newSortableID("cv")) }
 func NewCorrelationID() CorrelationID { return CorrelationID(newSortableID("co")) }
-
-// NewNonce returns a fresh single-use token body (no prefix; it travels as an
-// opaque value, never as an identifier).
-func NewNonce() string {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		panic("domain: crypto/rand unavailable: " + err.Error())
-	}
-	return strings.ToLower(idEncoding.EncodeToString(raw[:]))
-}

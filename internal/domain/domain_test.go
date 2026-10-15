@@ -22,9 +22,6 @@ func TestNewIDsAreUniqueAndPrefixed(t *testing.T) {
 	if string(NewTaskID())[:3] != "ta_" || string(NewMissionID())[:3] != "mi_" {
 		t.Fatal("unexpected ID prefixes")
 	}
-	if NewNonce() == NewNonce() {
-		t.Fatal("nonces must differ")
-	}
 }
 
 func TestCanonicalDigestBindsSemanticsNotSpelling(t *testing.T) {
@@ -187,7 +184,6 @@ func TestAuthorizationCheck(t *testing.T) {
 	action := Action{Kind: ActionFileModify, Path: "C:/proj/a.txt"}
 	auth := Authorization{
 		ID:           NewApprovalID(),
-		Nonce:        NewNonce(),
 		MissionID:    NewMissionID(),
 		TaskID:       NewTaskID(),
 		AgentID:      NewAgentID(),

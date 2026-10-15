@@ -301,66 +301,62 @@ func TestCompanionWriteApprovalHappyPath(t *testing.T) {
 	if ap.Authorization == nil {
 		t.Fatal("approved approval must carry an authorization")
 	}
-	nonce := ap.Authorization.Nonce
 
-	// Approved retry runs exactly the authorized action.
-	req := f.req(write("C:/proj/src/a.go"))
-	req.Nonce = nonce
-	d2, err := f.engine.Evaluate(req)
-	if err != nil || d2.Outcome != domain.OutcomeAllow {
-		t.Fatalf("approved retry must allow, got %s err=%v", d2.Outcome, err)
+	// The approved retry runs the authorized action — the retry itself carries
+	// nothing but the same tool call; the grant is claimed by exact binding.
+	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("approved retry must allow, got %s", got)
 	}
 
-	// The same token never works twice.
-	req2 := f.req(write("C:/proj/src/a.go"))
-	req2.Nonce = nonce
-	if d3, _ := f.engine.Evaluate(req2); d3.Outcome != domain.OutcomeDeny {
-		t.Fatalf("replayed authorization must deny, got %s", d3.Outcome)
+	// The grant is single-use: the next identical attempt is gated again,
+	// with a fresh approval to decide on.
+	d3 := f.eval(t, write("C:/proj/src/a.go"))
+	if d3.Outcome != domain.OutcomeRequireApproval {
+		t.Fatalf("a consumed grant must not authorize again, got %s", d3.Outcome)
+	}
+	if d3.ApprovalID == d.ApprovalID {
+		t.Fatal("the fresh request must be a new approval, not the spent one")
 	}
 }
 
 func TestApprovalCannotBeSwappedToAnotherTarget(t *testing.T) {
 	f := newFixture(t, domain.ModeCompanion)
 	d := f.eval(t, write("C:/proj/src/a.go"))
-	ap, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now)
-	if err != nil {
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
 		t.Fatal(err)
 	}
-	req := f.req(write("C:/proj/src/OTHER.go")) // different target
-	req.Nonce = ap.Authorization.Nonce
-	got, _ := f.engine.Evaluate(req)
-	if got.Outcome != domain.OutcomeDeny {
-		t.Fatalf("approval must not transfer to a changed action (S06), got %s", got.Outcome)
+	// A different target is a different action: the grant for a.go must not
+	// slide over to OTHER.go (S06). It gets gated like any new action.
+	if got := f.eval(t, write("C:/proj/src/OTHER.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("approval must not transfer to a changed action (S06)")
+	}
+	// And the untouched grant still authorizes exactly its own action once.
+	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
+		t.Fatalf("the original grant should still authorize its exact action, got %s", got)
 	}
 }
 
 func TestApprovalInvalidatedByScopeChange(t *testing.T) {
 	f := newFixture(t, domain.ModeCompanion)
 	d := f.eval(t, write("C:/proj/a.go"))
-	ap, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now)
-	if err != nil {
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
 		t.Fatal(err)
 	}
 	f.mission.Policy.Scope.Roots = []string{"C:/proj", "C:/extra"} // widened afterwards
-	req := f.req(write("C:/proj/a.go"))
-	req.Nonce = ap.Authorization.Nonce
-	if got, _ := f.engine.Evaluate(req); got.Outcome != domain.OutcomeDeny {
-		t.Fatalf("scope change must invalidate the grant, got %s", got.Outcome)
+	if got := f.eval(t, write("C:/proj/a.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("scope change must invalidate the grant, it must not silently apply")
 	}
 }
 
 func TestExpiredAuthorizationDenied(t *testing.T) {
 	f := newFixture(t, domain.ModeCompanion)
 	d := f.eval(t, write("C:/proj/a.go"))
-	ap, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now)
-	if err != nil {
+	if _, err := f.engine.Decide(d.ApprovalID, true, domain.Actor{Source: domain.SourceLocalUser}, f.now); err != nil {
 		t.Fatal(err)
 	}
-	req := f.req(write("C:/proj/a.go"))
-	req.Nonce = ap.Authorization.Nonce
-	req.Now = f.now.Add(domain.AuthorizationTTL + time.Minute)
-	if got, _ := f.engine.Evaluate(req); got.Outcome != domain.OutcomeDeny {
-		t.Fatalf("expired authorization must deny, got %s", got.Outcome)
+	f.now = f.now.Add(domain.AuthorizationTTL + time.Minute)
+	if got := f.eval(t, write("C:/proj/a.go")).Outcome; got == domain.OutcomeAllow {
+		t.Fatal("expired grant must not authorize")
 	}
 }
 
