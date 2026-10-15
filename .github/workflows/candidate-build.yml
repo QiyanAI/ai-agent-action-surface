@@ -89,8 +89,9 @@ jobs:
           done
 
           # The label travels WITH the artifacts: separated from this page a
-          # candidate must still say what it is. (printf, not a heredoc: the
-          # YAML indentation would make a heredoc terminator unreachable.)
+          # candidate must still say what it is. It lives inside dist/ so the
+          # upload below (dist/*) actually carries it. (printf, not a heredoc:
+          # the YAML indentation would make a heredoc terminator unreachable.)
           {
             printf '%s\n' "EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED"
             printf 'version: %s\n' "${version}"
@@ -102,7 +103,7 @@ jobs:
               "and must stay at the path it is extracted to: installed Claude Code" \
               "integrations point at the binary's absolute path, and moving or deleting" \
               "it makes the gate fail closed."
-          } > CANDIDATE-LABEL.txt
+          } > dist/CANDIDATE-LABEL.txt
 
       - name: Record artifact identity
         run: |
@@ -110,7 +111,40 @@ jobs:
           cd dist
           sha256sum qiyan_* | tee SHA256SUMS
           echo
-          ls -l qiyan_*
+          ls -l qiyan_* SHA256SUMS CANDIDATE-LABEL.txt
+
+      - name: Verify the candidate set is complete
+        env:
+          VERSION_INPUT: ${{ inputs.version_label }}
+        run: |
+          set -euo pipefail
+          # The artifact must never be published half-formed: every expected
+          # file present and non-empty, the checksums self-consistent, and the
+          # label bound to this run's version and commit.
+          version="$VERSION_INPUT"
+          expected=(
+            "qiyan_${version}_linux_amd64"
+            "qiyan_${version}_linux_arm64"
+            "qiyan_${version}_darwin_amd64"
+            "qiyan_${version}_darwin_arm64"
+            "qiyan_${version}_windows_amd64.exe"
+            "SHA256SUMS"
+            "CANDIDATE-LABEL.txt"
+          )
+          for f in "${expected[@]}"; do
+            if [ ! -s "dist/$f" ]; then
+              echo "missing or empty in the candidate set: dist/$f" >&2
+              exit 1
+            fi
+          done
+          if [ "$(wc -l < dist/SHA256SUMS)" -ne 5 ]; then
+            echo "SHA256SUMS must cover exactly the five binaries" >&2
+            exit 1
+          fi
+          (cd dist && sha256sum --check SHA256SUMS)
+          grep -q "^version: ${version}$" dist/CANDIDATE-LABEL.txt
+          grep -q "^commit:  ${GITHUB_SHA}$" dist/CANDIDATE-LABEL.txt
+          echo "candidate set complete: 5 binaries + SHA256SUMS + CANDIDATE-LABEL.txt"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
