@@ -20,14 +20,14 @@ Enforcement → Outcome**。循环的每个阶段在今天的 API 中都真实�
 | --- | --- | --- |
 | **Action（行动）** | Agent 提议要做的那件确切的事，附带可信身份与上下文 | `POST /v1/authorize`——身份来自 Bearer token + 存储的任务（绝不来自请求体）；`action` 对象写明 kind、tool 与目标；`contentDigest` 绑定写入内容 |
 | **Risk & Evidence（风险与证据）** | 引擎为何得出这个结论，以机器稳定形式表达 | `reasons[]` `{code, params}`（已声明 25 个原因码）；范围包含、角色规则、审批类别与预算全部由服务端裁决，并逐条记录在 `GET /v1/decisions` |
-| **Authorization（授权）** | 谁可以批准什么、有效期多长、范围多大 | 仅操作者可用的 `POST /v1/approvals/{id}/decision`（Agent 得到 `401`）；绑定规则：一次批准 → 那个确切操作至多执行一次（任务 + Agent + 操作摘要 + 范围摘要；15 分钟有效期；一次性；被拒绝保持拒绝；范围变更即失效） |
+| **Authorization（授权）** | 谁可以批准什么、有效期多长、范围多大 | 仅操作者可用的 `POST /v1/approvals/{id}/decision`（Agent 得到 `401`）；绑定规则：一次批准 → 那个确切操作至多执行一次（任务 + 任务单 + Agent + 操作摘要 + 范围摘要）。两个时钟：*待批的审批*自发起起 15 分钟内有效；批准会铸出*一次性授权*、有效期 10 分钟，在重试调用时被原子认领。被拒绝保持拒绝；范围变更即失效 |
 | **Enforcement（执行控制）** | 答案生效的执行前时点 | Claude Code 路径：`POST /v1/hook/decide`——工具调用可证明地在闸门前停下/放行，标记 `coverage: "ENFORCED"`。第三方 Host 路径：**遵守与否是 Host 的代码**——Qiyan 给出答案，Host 遵守，决策为 `OBSERVED`。契约把这条线画清楚，而不是含糊 |
 | **Outcome（结果）** | 实际发生了什么，并与决策配对 | `POST /v1/events`（`executed` / `failed` / `blocked` / `cancelled`）使用同一个 `actionDigest`；审计轨迹可读：`GET /v1/decisions?task=…`。诚实的限制写在该节——目前没有读取回执端点，摘要配对是 Host 自己的责任 |
 
 以及属于每个阶段的一件事：**表达"未受保护"的部分**——按路径的 `coverage`
 （`ENFORCED` / `OBSERVED` / `UNCOVERED` / `UNKNOWN`）、来自真实验证运行的
 `GET /v1/coverage` 事实、刻意不存在的 `protected: true` 捷径、以及对绕过
-API 的路径一字不提。详见下文"表达未受保护的部分"。
+API 的路径一字不提。详见下文"表达'哪些没有被保护'"一节。
 
 ## 从这里开始：第三方接入完整流程
 
@@ -39,8 +39,12 @@ qiyan serve                              # 1. 控制服务（打印地址与 tok
 qiyan agents add --name MyHost --role builder
                                          # 2. Agent 身份；agent token 只显示一次
 qiyan mission create --goal "host demo" --root D:/scratch \
-    --tool note.read --tool report.append --tool tmp.cleanup
-                                         # 3. 任务 + 你的 Host 将使用的确切工具名
+    --tool note.read --tool report.append --tool tmp.cleanup --tool mail.send     --kind network.access
+                                         # 3. 任务 + 你的 Host 的确切工具名。
+                                         #    注意：本 CLI 还会追加默认的工具/kind
+                                         #    授权（内置读写工具与 file.* 类别）——
+                                         #    任务实际携带的范围，以控制台任务页与
+                                         #    GET /v1/missions/{id} 为准。
 qiyan task create --mission mi_… --role builder --agent ag_… --title "host work"
                                          # 4. 任务被指派给你的 Agent 身份
 qiyan session bind --task ta_… --agent ag_… --session myhost-1
@@ -66,7 +70,9 @@ go run ./cmd/qiyanhost --addr 127.0.0.1:8760 --token $AGENT_TOKEN \
 - 任务来自你指定的已存任务（它的状态、它被指派的 Agent、它所属任务的授权范围）；
 - **请求体中的 `missionId` 仅供参考**：服务端以已存任务所属的任务为准，忽略冲突值；
 - 请求者必须是该任务自己的被指派 Agent，且在任务名册中；任务必须处于存活状态。
-  否则：`DENY`，原因 `identity_unknown`；未知 token 则返回 `UNKNOWN_IDENTITY` 错误。
+  否则：**Agent 错误或缺失**（或不在名册中）返回 `DENY`、原因 `identity_unknown`；
+  **任务不在活跃状态**返回 `UNKNOWN`、同一原因（`UNKNOWN` 一律视为拒绝——见结果表）；
+  未知 token 则返回 `UNKNOWN_IDENTITY` 错误。
 - 工具与 kind 必须位于任务授权范围内（第 3 步的 `--tool` 授权）；其余一律
   `tool_not_in_scope` / `unrecognized_command`。
 
@@ -99,7 +105,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
 | kind | 必填 | 说明 |
 | --- | --- | --- |
 | `file.read` / `file.create` / `file.modify` / `file.delete` | `kind`、`tool`、`path` | 路径必须绝对且已规范化（正斜杠、无 `..`）；包含关系按任务范围检查 |
-| `process.exec` | `kind`、`tool`、`command` | 强烈建议给 `cwd`（引擎会据它推理）；**所有 Shell 类操作按设计一律需要人工批准**——不存在命令名白名单 |
+| `process.exec` | `kind`、`tool`、`command` | 请提供 `cwd`（命令将运行的目录）：它会绑定进操作摘要、并随审批展示，但不影响结果——**所有 Shell 类操作按设计一律需要人工批准**，不存在命令名白名单 |
 | `network.access` | `kind`、`tool`、`url` | 走审批门禁 |
 | `credential.use` | `kind`、`tool`、`credentialRef` | 只给名称、绝不给值；走审批门禁 |
 | `external.state_change` | `kind`、`tool` | 走审批门禁 |
@@ -179,7 +185,7 @@ POST /v1/events             Authorization: Bearer <agent token>
 - 目前**没有回读端点**——你无法 `GET` 回自己上报的内容；请自行留存副本；
 - 服务端**不校验** `actionDigest` 是否对应某条已记录的决策——过期或不匹配的摘要
   会被接受。把 `actionDigest` 与你自己的决策记录配对，是你自己的责任；
-- 决策本身完全可读：`GET /v1/decisions?task=…` 按决策返回 结果、结构化原因、
+- 决策本身完全可读（操作者/会话）：`GET /v1/decisions?task=…` 按决策返回 结果、结构化原因、
   操作负载、模式与覆盖——这就是可审计的轨迹。
 
 ## 表达“哪些没有被保护”
@@ -213,10 +219,10 @@ POST /v1/events             Authorization: Bearer <agent token>
 | `sensitive_command` | 所有 Shell 类命令一律需要批准（`{program}`） |
 | `credential_reference` / `external_network` / `external_state_change` | 审批门禁类别 |
 | `mode_companion` | 陪同模式：修改等待确认 |
-| `budget_exhausted`（`{what}`：steps/runtime） | 任务预算耗尽 |
+| `budget_exhausted`（`{what}` = `budget`） | 任务预算耗尽 |
 | `task_cancelled` | 任务已被取消 |
-| `identity_unknown`（`{what}`） | 身份/状态无法确认 |
-| `delegation_escalation`（`{what}`） | 委派会扩大权限 |
+| `identity_unknown`（`{what}` = `task_state` / `task_agent` / `requester` / `agent`） | 身份/状态无法确认 |
+| `delegation_escalation`（`{what}` = `reason` / `from` / `to` / `receiver` / `delegated_kind`） | 委派会扩大权限 |
 | `user_approved`（`{approval}`）/ `user_denied` | 人类对重试操作的决定 |
 | `approval_expired` / `approval_cancelled` / `action_changed` | 授权对本次尝试不再有效 |
 | `authorization_replayed` *未产生* | 已声明词表；已用掉的授权会触发全新的闸门评估（见审批一节） |
@@ -247,9 +253,13 @@ POST /v1/missions/{id}/run              # 操作者：运行三角色小队
 GET  /v1/missions/{id}/run              # 实时事件轨迹（内存态；重启即丢失——
                                         #   可审计的决策轨迹保存在 GET /v1/decisions）
 POST /v1/missions/{id}/run/cancel       # 停止运行；状态变为 "cancelled"
-GET  /v1/decisions?task=…               # 可审计的轨迹
+GET  /v1/decisions?task=…               # 可审计的轨迹（操作者/会话）
 GET  /v1/coverage                       # 强制执行事实（操作者/会话——并非无需鉴权）
-GET  /v1/health                         # 仅存活检查（无鉴权、无数据）
+GET  /v1/health                         # 存活 + 版本/存储阻塞/运行时长（无鉴权）
+POST /v1/agents / GET /v1/agents        # 操作者：Agent 注册（token 只显示一次）与列表——
+                                        #   上文流程使用，属本契约的一部分
+GET  /v1/tasks/{id}                     # 操作者：任务详情
+POST /v1/tasks/{id}/cancel              # 操作者：取消任务（同时撤回其待批审批）
 ```
 
 ## 参考 Host
@@ -274,8 +284,10 @@ GET  /v1/health                         # 仅存活检查（无鉴权、无数�
 头缺失或错误应答 `403 UNKNOWN_IDENTITY`；两者都是凭据形态的拒绝，不是决策 ·
 `404` `NOT_FOUND`、`APPROVAL_NOT_FOUND` · `409` `CONFLICT`、
 `APPROVAL_EXPIRED`、`APPROVAL_CANCELLED` · `503` `STORE_CORRUPTED`、
-`CONTROL_UNAVAILABLE` · `500` `INTERNAL`（另有 `BUDGET_EXHAUSTED`、
-`TASK_CANCELLED`、`APPROVAL_REQUIRED` 视情况通过决策结果呈现）。
+`CONTROL_UNAVAILABLE` · `500` `INTERNAL`。（`BUDGET_EXHAUSTED`、
+`TASK_CANCELLED`、`APPROVAL_REQUIRED` 只是已声明的词汇，只会以决策原因/结果
+形式出现，**绝不**作为错误体；`OUT_OF_SCOPE` 只出现在下文控制台自用路由上，
+不在本契约之内。）
 
 ## 本契约不覆盖的内容
 
@@ -291,13 +303,15 @@ GET  /v1/health                         # 仅存活检查（无鉴权、无数�
 而不是以"惊喜"的方式发现它们：
 
 1. **已报告结果的读取回执**——今天 `POST /v1/events` 没有对应的 `GET`（见
-   "回传实际发生的事"一节）；未来的 `GET /v1/events?task=…` 会让结果轨迹直接
+   "如实回传发生了什么"一节）；未来的 `GET /v1/events?task=…` 会让结果轨迹直接
    可审计。
 2. **服务端的结果摘要绑定**——今天服务端接受 `actionDigest` 但不与已记录的
    决策核对；未来修订可以拒绝未知摘要。
 3. **跨运行时适配声明**——今天运行时的能力经由 Control API 声明或安全实验室
    进入；未来的字段可以让外部适配器正式声明其集成面。（运行时口径不变：
-   Claude Code 是唯一*受支持*的。）
+   Claude Code 是唯一*受支持*的；见下文"构建适配器——生态邀请"。）
+4. **机器可读的契约模式**（OpenAPI/JSON-Schema），让适配器可以生成客户端，
+   而不是逐字转录散文。本契约目前只有散文形态。
 
 如果你需要其中任何一项，请开 Issue 描述你的用例——有真实集成作为后盾的
 提案，才是值得做的提案。

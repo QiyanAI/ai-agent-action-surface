@@ -51,7 +51,7 @@ and watch a console where every sensitive action **stops before it runs**. Shell
 commands always wait for your approval. An out-of-scope write is denied with a
 reason in plain words. Each decision is recorded with machine-stable evidence,
 and the console shows coverage per path: `ENFORCED`, `OBSERVED`, `UNCOVERED`,
-`UNKNOWN` — including the honest `UNVERIFIED` cases. There is no OS-sandbox
+`UNKNOWN` — with the not-yet-verified paths shown honestly as such. There is no OS-sandbox
 claim, no cloud, no account and no telemetry. Developers can put the same
 decision point in front of their own agent host through the open
 [Open Control Contract](developer-api.md): *may I do this?* → allow, deny, or
@@ -96,6 +96,16 @@ commands and what you will see — live in [demos.md](demos.md):
   the public API only: allow / deny / approval / stop-when-service-is-down.
   *Other developers can use Qiyan as their open control layer.*
 
+中文对照：
+
+- **Demo A — 你的 AI 团队。** 一个目标；三个真实会话；敏感行动停下等你决定。
+  *AI 真的替你干活——而控制权始终在你。*
+- **Demo B — 在它行动之前。** 越界行动撞上门禁、没有执行，原因用通俗语言给出。
+  *安全不是扫描报告，而是行动之前真实发生的控制。*
+- **Demo C — 用 Qiyan 构建。** 独立参考 Host 仅用公开 API 完成接入：允许 /
+  拒绝 / 审批 / 控制服务失联即停止。*其他开发者可以把 Qiyan 当作自己的开放
+  控制层。*
+
 演示的可复现步骤（真实运行、真实记录）见 [demos.md](demos.md)。
 
 ## 6. GitHub Release notes (draft for the maintainer to attach)
@@ -121,15 +131,28 @@ commands and what you will see — live in [demos.md](demos.md):
 > those warnings for other software. Shell commands always wait for your
 > approval. Full boundary: docs/scope-and-claims.md.
 >
+> **Build identity:** commit `<SHA>` · tag `v0.3.0-beta.1` · assets: the five
+> platform binaries + `SHA256SUMS` + `LICENSE.txt` + the EARLY ACCESS/BETA
+> label (`CANDIDATE-LABEL.txt`). Provenance: verify any binary with
+> `gh attestation verify <file> --repo QiyanAI/ai-agent-action-surface` — the
+> attestation binds it to this tag's commit.
+>
+> **Platform scope, precisely:** all five targets are built from this tag;
+> windows/amd64 was executed on Windows 11 for the release checks; the other
+> targets are built-and-attested but not executed; there is no officially
+> supported platform list yet. Runtime support: only Claude Code, fail-closed
+> on 2.1.295+ (probed per machine).
+>
 > **First run:** put the file in a folder you will keep *before* connecting
 > any project — moving it later fails the gate closed. Install, verify and
-> uninstall: docs/install.md. Known limitations: that page's "Known
-> limitations" section. Security reports: SECURITY.md (private channel, no
-> public issues).
+> uninstall: <https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/install.md>.
+> Known limitations: that page's "Known limitations" section. Security
+> reports: <https://github.com/QiyanAI/ai-agent-action-surface/blob/main/SECURITY.md>
+> (private channel, no public issues).
 >
 > Apache-2.0. No account, no telemetry, nothing sent to any Qiyan service.
 > When you connect Claude Code, model traffic goes to Anthropic under its own
-> terms.
+> terms. Full boundary: <https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/scope-and-claims.md>.
 
 ## 7. Boundary block — include (verbatim or linked) in every channel
 
@@ -145,26 +168,55 @@ Required by R04-09 in any copy used publicly; keep this block together:
   coverage table says what is actually enforced.
 - **Beta is not a production security certification.**
 
+中文版：
+
+- Qiyan 自身的控制服务在本机（环回）运行，不向任何 Qiyan 服务上传数据；连接
+  Claude Code 时，其模型调用发往 Anthropic、适用 Anthropic 自身的网络与数据
+  处理条款。
+- Qiyan **不是操作系统沙箱**。
+- 当前正式支持的运行时只有 **Claude Code**。
+- **Shell 命令一律等待你的批准。**
+- 集成未覆盖的路径**不宣称受到保护**——覆盖表如实说明哪些真正被强制执行。
+- **Beta 不是生产级安全认证。**
+
 ## 8. Release-day checklist (maintainer actions; Claude Code does not do these)
 
-1. Merge the R04 PR (normal maintainer flow; CI must be green).
-2. Dispatch **Candidate Build** on `main` with `flavor: beta`,
+Order matters: the tag comes **before** the build, because the beta flavor
+refuses to run outside a `refs/tags/v<version>` checkout — that machine check
+is what binds the artifact's version identity to a real tag (G3). A tag
+publishes nothing by itself.
+
+1. Merge the R04 PR (normal maintainer flow; CI must be green — G1).
+2. Create tag `v0.3.0-beta.1` on the merge commit (the exact SHA main now is).
+   A lightweight tag is fine; it is not a Release.
+3. Dispatch **Candidate Build** **at the tag**
+   (`--ref v0.3.0-beta.1`) with `flavor: beta`,
    `version_label: 0.3.0-beta.1`; wait for the run; download the artifact.
-3. Verify: `sha256sum -c SHA256SUMS`, `gh attestation verify` (each binary),
-   run the Windows binary once (`serve` + console + demo).
-4. Create tag `v0.3.0-beta.1` on the exact commit the build ran from
-   (the run's `HEAD SHA` — shown in the run and bound in every attestation).
-5. Create the Release with those five files + `SHA256SUMS` + `LICENSE.txt` +
-   `CANDIDATE-LABEL.txt`, pasting the §6 notes (adjust dates/links only).
+   The label file inside records the tag, the commit and the flavor.
+4. Verify: `sha256sum -c SHA256SUMS` (or Windows `Get-FileHash` per file),
+   `gh attestation verify` (each binary), run the Windows binary once
+   (`serve` + console + demo) — record the outputs for the readiness record.
+5. Create the Release (`--prerelease`) with the five binaries + `SHA256SUMS` +
+   `LICENSE.txt` + `CANDIDATE-LABEL.txt` (8 files), pasting the §6 notes with
+   the commit/tag line and the platform-scope line filled from the run:
+
+   ```sh
+   gh release create v0.3.0-beta.1 --repo QiyanAI/ai-agent-action-surface      --prerelease --target <the tag's SHA>      --title "Qiyan v0.3.0-beta.1 - Early Access / Beta"      --notes-file <filled-in notes> <the 8 files>
+   ```
 6. **Then** apply the README swap below (docs/install.md needs the same swap
-   in its blockquote and its "Where to get it" sentence).
+   in its blockquote and its "Where to get it" sentence). The swap is a
+   follow-up PR because main is protected — that is expected and fine.
+
+R03 test-build artifacts (the `r03-candidate-*` sets) expire in the artifact
+store and are **never** part of the Release; only the freshly built,
+tag-bound `beta-candidate-*` set goes up.
 
 ### README release-day swap
 
 Replace, in `README.md` (and the parallel spot in `README.zh-CN.md`):
 
-> "the **v0.3.0-beta.1 Public Beta** builds … are prepared and awaiting the
-> maintainer's release authorization; when they ship they appear on
+> "the **v0.3.0-beta.1 Public Beta** … is assembled and awaiting the
+> maintainer's release authorization; once authorized, the files appear on
 > [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)."
 
 with:

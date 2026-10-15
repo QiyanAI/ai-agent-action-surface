@@ -25,7 +25,7 @@ not a slogan:
 | --- | --- | --- |
 | **Action** | The exact thing an agent proposes to do, with a trusted identity and context attached | `POST /v1/authorize` — identity comes from the bearer token + stored task (never the body); the `action` object names kind, tool and target; `contentDigest` binds written bytes |
 | **Risk & Evidence** | Why the engine reached its conclusion, in machine-stable terms | `reasons[]` `{code, params}` (25 declared codes); scope containment, role rules, approval classes and budgets are all decided server-side and recorded per decision in `GET /v1/decisions` |
-| **Authorization** | Who may approve what, for exactly how long, and for what | Operator-only `POST /v1/approvals/{id}/decision` (agents get `401`); the binding: one approval → at most one execution of the exact action (mission + task + agent + action digest + scope digest; 15-minute TTL; single-use; denied stays denied; scope change invalidates) |
+| **Authorization** | Who may approve what, for exactly how long, and for what | Operator-only `POST /v1/approvals/{id}/decision` (agents get `401`); the binding: one approval → at most one execution of the exact action (mission + task + agent + action digest + scope digest). Two clocks: the *pending approval* expires 15 minutes after it is requested; approving mints a *single-use authorization* valid 10 minutes, claimed atomically on the retried call. Denied stays denied; a scope change invalidates |
 | **Enforcement** | The pre-execution point where the answer takes effect | On the Claude Code path: `POST /v1/hook/decide` — the tool call provably stops/starts at the gate, stamped `coverage: "ENFORCED"`. On a third-party host's path: **compliance is the host's code** — Qiyan answers, the host obeys, and the decision is `OBSERVED`. The contract draws this line instead of blurring it |
 | **Outcome** | What actually happened, paired with the decision | `POST /v1/events` (`executed` / `failed` / `blocked` / `cancelled`) with the same `actionDigest`; the audited trail is readable via `GET /v1/decisions?task=…`. Honest limits are in that section — there is no read-back yet, and digest pairing is the host's responsibility |
 
@@ -45,8 +45,15 @@ qiyan serve                              # 1. control service (prints addr + tok
 qiyan agents add --name MyHost --role builder
                                          # 2. agent identity; prints the agent token ONCE
 qiyan mission create --goal "host demo" --root D:/scratch \
-    --tool note.read --tool report.append --tool tmp.cleanup
-                                         # 3. mission + the EXACT tool names your host will use
+    --tool note.read --tool report.append --tool tmp.cleanup --tool mail.send \
+    --kind network.access
+                                         # 3. mission + your host's exact tool names.
+                                         #    Note: this CLI also adds its default
+                                         #    tool/kind grants (the built-in read/
+                                         #    write tools and file.* kinds) — the
+                                         #    console's mission page and
+                                         #    GET /v1/missions/{id} show the scope
+                                         #    the mission actually carries.
 qiyan task create --mission mi_… --role builder --agent ag_… --title "host work"
                                          # 4. a task whose agent IS your agent identity
 qiyan session bind --task ta_… --agent ag_… --session myhost-1
@@ -76,8 +83,11 @@ request body is trusted:
 - **the body's `missionId` is advisory**: the server uses the mission the
   stored task belongs to and ignores a conflicting value;
 - the requester must be the task's own assigned agent and be on the mission
-  roster; the task must be in a live state. Otherwise: `DENY` with reason
-  `identity_unknown`, or an `UNKNOWN_IDENTITY` error for an unknown token.
+  roster; the task must be in a live state. Otherwise: a **wrong or missing
+  agent** (or one off the roster) yields `DENY` with reason `identity_unknown`;
+  a **task that is not in a live state** yields `UNKNOWN` with the same reason
+  (and `UNKNOWN` is treated as denial — see the outcome table); an unknown
+  token gets the `UNKNOWN_IDENTITY` error.
 - tool and kind must be inside the mission scope (the `--tool` grants from
   step 3); everything else is `tool_not_in_scope` / `unrecognized_command`.
 
@@ -110,7 +120,7 @@ POST /v1/authorize          Authorization: Bearer <agent token>
 | kind | required | notes |
 | --- | --- | --- |
 | `file.read` / `file.create` / `file.modify` / `file.delete` | `kind`, `tool`, `path` | path must be absolute and normalized (`forward/slashes`, no `..`); containment is checked against the mission scope |
-| `process.exec` | `kind`, `tool`, `command` | `cwd` strongly recommended (the engine reasons about it); **every** shell-class action requires human approval by design — there is no name allowlist |
+| `process.exec` | `kind`, `tool`, `command` | provide `cwd` (the directory the command will run in): it is bound into the action digest and shown with the approval, but the outcome is unaffected — **every** shell-class action requires human approval by design, with no name allowlist |
 | `network.access` | `kind`, `tool`, `url` | approval-gated |
 | `credential.use` | `kind`, `tool`, `credentialRef` | names only, never values; approval-gated |
 | `external.state_change` | `kind`, `tool` | approval-gated |
@@ -200,9 +210,9 @@ Honest limits, stated here because a contract is where they belong:
 - the server **does not verify** that `actionDigest` matches a recorded
   decision — a stale or mismatched digest is accepted. Treat the pairing of
   `actionDigest` with your decision record as your own responsibility;
-- decisions themselves are fully readable: `GET /v1/decisions?task=…` returns,
-  per decision, the outcome, the structured reasons, the action payload, mode
-  and coverage — that is the audited trail.
+- decisions themselves are fully readable (operator/session):
+  `GET /v1/decisions?task=…` returns, per decision, the outcome, the structured
+  reasons, the action payload, mode and coverage — that is the audited trail.
 
 ## Expressing what is NOT protected
 
@@ -241,10 +251,10 @@ to render generically):
 | `sensitive_command` | every shell-class command requires approval (`{program}`) |
 | `credential_reference` / `external_network` / `external_state_change` | approval-gated classes |
 | `mode_companion` | accompany mode: changes wait for confirmation |
-| `budget_exhausted` (`{what}`: steps/runtime) | mission budget reached |
+| `budget_exhausted` (`{what}` = `budget`) | mission budget reached |
 | `task_cancelled` | the task was cancelled |
-| `identity_unknown` (`{what}`) | identity/state could not be confirmed |
-| `delegation_escalation` (`{what}`) | delegation would widen authority |
+| `identity_unknown` (`{what}` = `task_state` / `task_agent` / `requester` / `agent`) | identity/state could not be confirmed |
+| `delegation_escalation` (`{what}` = `reason` / `from` / `to` / `receiver` / `delegated_kind`) | delegation would widen authority |
 | `user_approved` (`{approval}`) / `user_denied` | the human's decision on the retried action |
 | `approval_expired` / `approval_cancelled` / `action_changed` | grant no longer valid for this attempt |
 | `authorization_replayed` *never emitted* | declared vocabulary; a spent grant leads to a fresh gate evaluation instead (see the approvals section) |
@@ -277,9 +287,13 @@ POST /v1/missions/{id}/run              # operator: run the three-role fleet
 GET  /v1/missions/{id}/run              # live event trail (in-memory; lost on restart — the
                                         #   audited decision trail survives in GET /v1/decisions)
 POST /v1/missions/{id}/run/cancel       # stops the run; state becomes "cancelled"
-GET  /v1/decisions?task=…               # the audited trail
+GET  /v1/decisions?task=…               # the audited trail (operator/session)
 GET  /v1/coverage                       # enforcement facts (operator/session — NOT unauthenticated)
-GET  /v1/health                         # liveness only (no auth, no data)
+GET  /v1/health                         # liveness + version/store-blocked/uptime (no auth)
+POST /v1/agents / GET /v1/agents        # operator: agent registration (token shown once) and listing —
+                                        #   used by the runbook above and part of this contract
+GET  /v1/tasks/{id}                     # operator: task detail
+POST /v1/tasks/{id}/cancel              # operator: cancel a task (withdraws its pending approvals)
 ```
 
 ## Reference host
@@ -310,8 +324,10 @@ missing/incorrect UI-session CSRF header answers `403 UNKNOWN_IDENTITY`;
 both are credential-shape refusals, not decisions · `404`
 `NOT_FOUND`, `APPROVAL_NOT_FOUND` · `409` `CONFLICT`, `APPROVAL_EXPIRED`,
 `APPROVAL_CANCELLED` · `503` `STORE_CORRUPTED`, `CONTROL_UNAVAILABLE` · `500`
-`INTERNAL` (plus `BUDGET_EXHAUSTED`, `TASK_CANCELLED`, `APPROVAL_REQUIRED`
-surfaced through decisions where applicable).
+`INTERNAL`. (`BUDGET_EXHAUSTED`, `TASK_CANCELLED` and `APPROVAL_REQUIRED` are
+declared vocabulary that surfaces as decision reasons/outcomes, **never** as
+error bodies; `OUT_OF_SCOPE` appears only on the console-local routes below,
+which are outside this contract.)
 
 ## What this contract does not cover
 
@@ -340,6 +356,9 @@ discover them as surprises:
    field could let an external adapter declare its integration surface
    formally. (Runtimes: Claude Code is the only *supported* one; see the
    ecosystem note below.)
+4. **A machine-readable schema** (OpenAPI/JSON-Schema) of this contract, so
+   adapters can generate clients instead of transcribing prose. The contract
+   is currently prose only.
 
 If you want one of these, open an issue describing your use case — proposals
 with a real integration behind them are the ones worth doing.

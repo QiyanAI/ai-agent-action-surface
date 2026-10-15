@@ -14,11 +14,12 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
 一切都在本地运行：无需账号、不上云、无遥测——Qiyan 不向任何 Qiyan 服务发送
 数据。中英文均为完整的一等支持。
 
-**立刻体验：** **v0.3.0-beta.1 Public Beta** 构建（五个平台，附校验和与构建
-来源证明）已备妥，等待维护者的发布授权；发布后将出现在
-[Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)。无需
-账号，内置 60 秒演示。Beta 发布前：两条命令从源码构建，或向维护者索取早期
-体验候选包——任何一条路都离演示只有一步。完整步骤：[立即试玩](#立即试玩)。
+**立刻体验：** **v0.3.0-beta.1 Public Beta**（五个平台，均从带 tag 的提交构建，
+附校验和与构建来源证明）已装配完成，等待维护者的发布授权；获授权后文件将
+出现在 [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)。
+无需账号，内置 60 秒演示。Beta 发布前：两条命令从源码构建，或向维护者索取
+早期体验候选包——任何一条路都离演示只有一步。完整步骤：
+[立即试玩](#立即试玩)。
 
 ![控制台首页：服务状态、四个入口、无需账号的演示](docs/images/console-home.png)
 
@@ -53,13 +54,14 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
 > **EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED（早期体验 / Beta /
 > 未经生产认证）。** v0.3.0-beta.1 是未签名的、无 CGO 的二进制，覆盖
 > linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64。
-> 它属于早期体验——**不是**生产级安全认证——不附带支持或兼容性承诺。构建
-> 已备妥、等待维护者的发布授权；发布后文件连同 `SHA256SUMS`、`LICENSE.txt`
-> 与把每个二进制绑定到确切提交的构建来源证明一起出现在
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)。
-> 在此之前：受邀测试者通过仅手动触发的 **Candidate Build** 工作流
-> （Actions → Candidate Build）获取当前候选包；任何人也可以按下方两条命令
-> 从源码构建。
+> 它属于早期体验——**不是**生产级安全认证——不附带支持或兼容性承诺。发布
+> 已装配完成、等待维护者的授权；获授权后，各文件连同 `SHA256SUMS`、
+> `LICENSE.txt` 与 EARLY ACCESS/BETA 标记——五个二进制加这三个文件——一起
+> 出现在 [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)；
+> 每个二进制的构建来源可用 `gh attestation verify` 验证（证明存放在仓库的
+> attestation 存储中，不是随附的签名文件）。Beta 发布前：受邀测试者通过仅
+> 手动触发的 **Candidate Build** 工作流（Actions → Candidate Build）获取当前
+> 候选包；任何人也可以按下方两条命令从源码构建。
 >
 > Windows SmartScreen 与 macOS Gatekeeper 会提示风险——没有签名，也请不要因此
 > 关闭其他软件的系统安全警告。**请把二进制放在你会长期保留的文件夹里**
@@ -72,10 +74,17 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
 为你的平台下载，然后校验并运行：
 
 ```sh
-sha256sum -c SHA256SUMS        # 每一行都必须显示 OK
+sha256sum -c SHA256SUMS        # 每一行都必须显示 OK（Git Bash/WSL；原生 Windows 用下方 Get-FileHash）
 gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
 ./qiyan_0.3.0-beta.1_<os>_<arch> serve
-# 打印控制台地址、一键登录链接、状态目录与 token 文件路径
+# 打印控制台地址、登录链接、状态目录与 token 文件路径
+```
+
+原生 Windows（PowerShell）没有内置 `sha256sum` 与 `gh`，改用：
+
+```powershell
+Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
+# 将得到的哈希与 SHA256SUMS 中对应行比对
 ```
 
 打开打印出的控制台地址（或登录链接），从 60 秒演示开始——无需账号、无需
