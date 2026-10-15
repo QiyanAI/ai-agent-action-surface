@@ -54,7 +54,19 @@ type Store struct {
 	approvalSeq []domain.ApprovalID
 	auths       map[domain.ApprovalID]domain.Authorization
 	decisions   []DecisionRecord
+	results     []ResultEvent
 	coverage    map[string]domain.Coverage
+}
+
+// ResultEvent is one execution result reported back by an agent: what the
+// runtime actually did after a decision (book §14, "操作结果回传").
+type ResultEvent struct {
+	TaskID       domain.TaskID  `json:"taskId"`
+	AgentID      domain.AgentID `json:"agentId"`
+	ActionDigest string         `json:"actionDigest"`
+	Result       string         `json:"result"` // executed | failed | blocked | cancelled
+	Note         string         `json:"note"`
+	At           time.Time      `json:"at"`
 }
 
 // DecisionRecord is one audited engine decision.
@@ -91,6 +103,7 @@ const (
 	evAuthCreate     = "authorization.create"
 	evAuthClaim      = "authorization.claim"
 	evDecisionAppend = "decision.append"
+	evResultAppend   = "result.append"
 	evCoveragePut    = "coverage.put"
 )
 
@@ -105,6 +118,7 @@ type snapshot struct {
 	ApprovalSeq []domain.ApprovalID                          `json:"approvalSeq"`
 	Auths       map[domain.ApprovalID]domain.Authorization   `json:"authorizations"`
 	Decisions   []DecisionRecord                             `json:"decisions"`
+	Results     []ResultEvent                                `json:"results"`
 	Coverage    map[string]domain.Coverage                   `json:"coverage"`
 }
 
@@ -315,6 +329,12 @@ func (s *Store) apply(ev walEvent) error {
 			return err
 		}
 		s.decisions = append(s.decisions, rec)
+	case evResultAppend:
+		var rec ResultEvent
+		if err := json.Unmarshal(ev.Payload, &rec); err != nil {
+			return err
+		}
+		s.results = append(s.results, rec)
 	case evCoveragePut:
 		var c domain.Coverage
 		if err := json.Unmarshal(ev.Payload, &c); err != nil {
@@ -354,6 +374,7 @@ func (s *Store) applySnapshot(snap snapshot) {
 		s.auths = snap.Auths
 	}
 	s.decisions = snap.Decisions
+	s.results = snap.Results
 	if snap.Coverage != nil {
 		s.coverage = snap.Coverage
 	}
@@ -379,6 +400,7 @@ func (s *Store) Compact() error {
 		ApprovalSeq: s.approvalSeq,
 		Auths:       s.auths,
 		Decisions:   s.decisions,
+		Results:     s.results,
 		Coverage:    s.coverage,
 	}
 	raw, err := json.MarshalIndent(snap, "", "  ")

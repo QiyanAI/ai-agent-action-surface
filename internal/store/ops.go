@@ -399,6 +399,32 @@ func (s *Store) RecentDecisions(n int) ([]DecisionRecord, error) {
 	return out, nil
 }
 
+// AppendResult records one reported execution outcome.
+func (s *Store) AppendResult(ev ResultEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return storeBlockedErr(s.blocked)
+	}
+	return s.appendLocked(evResultAppend, ev, time.Now().UTC())
+}
+
+// ResultsForTask returns the reported results of one task, oldest first.
+func (s *Store) ResultsForTask(task domain.TaskID) ([]ResultEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.blocked != nil {
+		return nil, storeBlockedErr(s.blocked)
+	}
+	var out []ResultEvent
+	for _, ev := range s.results {
+		if ev.TaskID == task {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
 func storeBlockedErr(reason error) error {
 	return domain.NewError(domain.ErrStoreCorrupted, "state store is blocked: %v", reason)
 }

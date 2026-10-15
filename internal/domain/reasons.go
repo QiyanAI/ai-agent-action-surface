@@ -40,6 +40,10 @@ const (
 	ReasonModeControlledAuto    ReasonCode = "mode_controlled_auto"
 	ReasonModeBoundedAutonomy   ReasonCode = "mode_bounded_autonomy"
 
+	// ReasonNoExternalEffect marks a session-local tool pass-through: allowed,
+	// recorded, and explicitly NOT a protected action (S10 honesty).
+	ReasonNoExternalEffect ReasonCode = "no_external_effect"
+
 	// Coverage honesty.
 	ReasonPathNotCovered ReasonCode = "path_not_covered" // action lies on an execution path Qiyan cannot enforce
 )

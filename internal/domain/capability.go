@@ -17,6 +17,7 @@ const (
 	CapUseCredentials Capability = "use_credentials"
 	CapExternalState  Capability = "external_state_change"
 	CapDelegate       Capability = "delegate"
+	CapInternalState  Capability = "internal_state"
 	CapUnknown        Capability = "unknown"
 )
 
@@ -39,6 +40,8 @@ func CapabilitiesForKind(k ActionKind) []Capability {
 		return []Capability{CapExternalState}
 	case ActionDelegation:
 		return []Capability{CapDelegate}
+	case ActionSessionLocal:
+		return []Capability{CapInternalState}
 	default:
 		return []Capability{CapUnknown}
 	}
@@ -62,6 +65,16 @@ var toolCapabilities = map[string][]Capability{
 	"WebSearch":    {CapNetworkAccess},
 	"Task":         {CapDelegate},
 	"Agent":        {CapDelegate},
+	// Session bookkeeping: no external effect.
+	"TodoWrite":  {CapInternalState},
+	"TodoRead":   {CapInternalState},
+	"Skill":      {CapInternalState},
+	"TaskCreate": {CapInternalState},
+	"TaskGet":    {CapInternalState},
+	"TaskList":   {CapInternalState},
+	"TaskUpdate": {CapInternalState},
+	"TaskOutput": {CapInternalState},
+	"TaskStop":   {CapInternalState},
 }
 
 // CapabilitiesForTool returns the capabilities of a known tool and whether the

@@ -225,6 +225,11 @@ func (e *Engine) gate(req Request, scope domain.Scope) (domain.Outcome, []domain
 	case domain.ActionDelegation:
 		return e.gateDelegation(req, scope)
 
+	case domain.ActionSessionLocal:
+		// Session bookkeeping: allowed and recorded, but never presented as a
+		// vetted action.
+		return domain.OutcomeAllow, []domain.Reason{domain.NewReason(domain.ReasonNoExternalEffect, "tool", a.Tool)}
+
 	default: // ActionUnknown and anything unforeseen: the user decides, explicitly.
 		return domain.OutcomeRequireApproval, []domain.Reason{domain.NewReason(domain.ReasonUnrecognizedCommand, "kind", string(a.Kind))}
 	}

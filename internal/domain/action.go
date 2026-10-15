@@ -23,7 +23,13 @@ const (
 	ActionCredentialUse ActionKind = "credential.use"
 	ActionExternalState ActionKind = "external.state_change"
 	ActionDelegation    ActionKind = "agent.delegation"
-	ActionUnknown       ActionKind = "unknown"
+	// ActionSessionLocal names tools that only touch the agent's own session
+	// bookkeeping (todo lists, skill loading, task tracking). They have no
+	// effect outside the agent, so gating them would be noise — but they still
+	// flow through the engine and are recorded, so the decision authority
+	// stays single. They are not "protected": the coverage list says so.
+	ActionSessionLocal ActionKind = "session.local"
+	ActionUnknown      ActionKind = "unknown"
 )
 
 // KnownActionKind reports whether k is one of the defined kinds.
@@ -31,7 +37,7 @@ func KnownActionKind(k ActionKind) bool {
 	switch k {
 	case ActionFileRead, ActionFileCreate, ActionFileModify, ActionFileDelete,
 		ActionProcessExec, ActionNetwork, ActionCredentialUse, ActionExternalState,
-		ActionDelegation, ActionUnknown:
+		ActionDelegation, ActionSessionLocal, ActionUnknown:
 		return true
 	}
 	return false
@@ -41,7 +47,7 @@ func KnownActionKind(k ActionKind) bool {
 // roles use this to reject mutating actions before any policy runs.
 func (k ActionKind) Mutation() bool {
 	switch k {
-	case ActionFileRead:
+	case ActionFileRead, ActionSessionLocal:
 		return false
 	default:
 		return true
