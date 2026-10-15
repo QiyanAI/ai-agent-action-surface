@@ -66,7 +66,12 @@ the actual machine and records the measured tier.
   and the coverage table says what is enforced where.
 - **No other runtimes.** Only Claude Code is an officially supported
   integration; Cursor, ChatGPT, Codex, n8n and others are not claimed.
-- **No SaaS, no accounts, no telemetry.** Everything is local.
+- **No SaaS, no accounts, no telemetry.** Everything is local: Qiyan's own
+  control service runs on loopback and uploads nothing to any Qiyan service.
+  This claim covers Qiyan itself, not the external tools you connect: when you
+  connect Claude Code, its model calls go to Anthropic under Anthropic's own
+  network and data-handling terms, and Qiyan neither intermediates nor
+  controls that traffic.
 - **No auto-fix of arbitrary vulnerabilities.** The lab's auto-apply covers
   exactly the deny-rule addition it previews and verifies.
 - **One process owns the state.** `qiyan serve` is the single writer; the hook
@@ -89,6 +94,13 @@ platforms they were actually built for — not a supported-platform list. A
 downloaded candidate must stay where it is put: the installed Claude Code
 integration points at the binary's absolute path, and moving or deleting it
 makes the gate fail closed and block that project's tools.
+
+**Beta builds** (v0.3.0-beta.1 and any later early-access build published on
+the Releases page) carry the same boundary and one more: a Beta is early
+access, **not a production security certification**. Provenance attests where
+the file was built from — it says nothing about whether the software is free
+of defects, and nothing outside the coverage records is being claimed as
+protected.
 
 ## Evidence index
 
