@@ -30,8 +30,9 @@ steps: [Try it](#try-it).
 ## What it can do for you
 
 - **Let a small AI team do the work.** Give one goal; a Planner, a Builder and
-  a Reviewer work in three real sessions on your machine — and every sensitive
-  action pauses for your decision.
+  a Reviewer work in three real sessions on your machine — sensitive actions
+  stop at the gate: in-scope ones pause for your decision, and anything
+  outside the mission's scope is denied outright.
 - **Check whether an AI is risky.** The Safety Lab reads an agent's declared
   abilities and project wiring, attaches evidence to every finding in plain
   words, and its suggestions can be applied and *verified on your machine*.
@@ -48,8 +49,10 @@ steps: [Try it](#try-it).
    this machine — the version number is never trusted.
 3. **Give the fleet a mission**; the Planner plans, the Builder works, the
    Reviewer checks.
-4. Anything sensitive **stops and asks you** — approve once, or deny; a denied
-   action stays denied for that task.
+4. Anything sensitive **stops at the gate** — in-scope actions wait for your
+   decision (approve once, or deny; a denial holds for that task), and
+   out-of-scope actions are denied outright, never waiting for an approval
+   that could release them.
 5. Every decision is **recorded with evidence**, and the console shows what is
    actually enforced — and what is not.
 

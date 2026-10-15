@@ -15,28 +15,32 @@ wrong.
 
 > **Qiyan — Your AI Team. Your Rules.** A local, open platform for running AI
 > agents under pre-execution control: connect Claude Code, watch a small agent
-> team work, and approve or block every sensitive action *before* it runs.
+> team work, and stop sensitive actions *before* they run — in-scope ones wait
+> for your approval, and anything outside the mission's scope is denied
+> outright.
 
 ## 2. 一句话描述（中文，任意渠道）
 
 > **Qiyan —— 你的 AI 团队，你的规则。** 本地优先的开放平台：用执行前控制运行
-> AI Agents——接入 Claude Code，看小队干活，敏感行动在**执行之前**由你批准或
-> 拦截。
+> AI Agents——接入 Claude Code，看小队干活，敏感行动在**执行之前**就被拦下：
+> 任务范围内的敏感操作等待你的批准，超出任务范围的操作被直接拒绝。
 
 ## 3. Short blurb (~60 words, GitHub Release / community posts)
 
 Qiyan connects to your Claude Code projects and puts a real gate in front of
 what agents do. A Planner, a Builder and a Reviewer run as three real sessions;
-every shell command, deletion, credential use and out-of-scope path stops and
-asks you first. Decisions are recorded with evidence, what is *not* protected
+every shell command, deletion and credential use waits for your approval, and
+anything outside the mission's scope is denied outright, with the reason in
+plain words. Decisions are recorded with evidence, what is *not* protected
 is stated plainly, and an open local API lets other tools ask the same
 question before they act. Local-first, no account, no telemetry. Apache-2.0.
 
 ### 简短介绍（中文）
 
 Qiyan 接入你的 Claude Code 项目，把真正的门禁放在 Agent 行动之前。策划员、
-开发员、检查员是三个真实会话；每一条 Shell 命令、删除、凭据使用与越界路径
-都会停下先问你。每个决策都带证据记录，**没有**被保护的部分如实写明；开放、
+开发员、检查员是三个真实会话；每一条 Shell 命令、删除与凭据使用都会停下等待
+你的批准，而越界路径与范围外操作被直接拒绝、并给出通俗原因。每个决策都带证据
+记录，**没有**被保护的部分如实写明；开放、
 本地的 API 让其他软件也能在行动前问同一个问题。本地优先、无需账号、无遥测。
 Apache-2.0。
 
@@ -47,9 +51,10 @@ Apache-2.0。
 AI agents are becoming coworkers — but most tooling asks you to trust first and
 audit later. Qiyan is a local-first counterpart: connect your existing Claude
 Code setup, hand a goal to a three-agent crew (planner → builder → reviewer),
-and watch a console where every sensitive action **stops before it runs**. Shell
-commands always wait for your approval. An out-of-scope write is denied with a
-reason in plain words. Each decision is recorded with machine-stable evidence,
+and watch a console where every sensitive action **stops before it runs**:
+shell commands always wait for your approval, and an out-of-scope write is
+**denied outright** — with a reason in plain words, and with no approval that
+could release it. Each decision is recorded with machine-stable evidence,
 and the console shows coverage per path: `ENFORCED`, `OBSERVED`, `UNCOVERED`,
 `UNKNOWN` — with the not-yet-verified paths shown honestly as such. There is no OS-sandbox
 claim, no cloud, no account and no telemetry. Developers can put the same
@@ -69,8 +74,9 @@ a production security certification.
 
 AI Agent 正在成为同事——但多数工具让你先信任、后审计。Qiyan 是本地优先的
 另一条路：接入你现有的 Claude Code，把目标交给三角色小队（策划 → 开发 →
-检查），在控制台里看每一个敏感行动**在执行前停下**。Shell 命令一律等待你的
-批准；越界写入会带通俗原因被拒绝。每个决策都以机器稳定的证据记录，控制台
+检查），在控制台里看每一个敏感行动**在执行前停下**：Shell 命令一律等待你的
+批准；越界写入被**直接拒绝**——给出通俗原因，且不存在任何可以放行它的批准。
+每个决策都以机器稳定的证据记录，控制台
 按路径显示覆盖状态：`ENFORCED`、`OBSERVED`、`UNCOVERED`、`UNKNOWN`——诚实的
 未验证同样在内。没有操作系统沙箱的宣称，不上云、无账号、无遥测。开发者可以
 通过开放的[开放控制契约](developer-api.zh-CN.md)把同一个决策点放进自己的
@@ -120,9 +126,10 @@ commands and what you will see — live in [demos.md](demos.md):
 > 60 seconds, nothing real runs).
 >
 > **What it does:** connect Claude Code projects, run a three-role agent crew
-> under pre-execution control, approve or deny every sensitive action before
-> it runs, keep every decision with evidence, and integrate other tools via
-> the open Control Contract.
+> under pre-execution control, stop every sensitive action before it runs —
+> in-scope actions wait for your approval; anything outside the mission's
+> scope is denied outright — keep every decision with evidence, and integrate
+> other tools via the open Control Contract.
 >
 > **What it is not:** not a production security certification; not an OS
 > sandbox; not a claim over paths that bypass the Control API; only Claude

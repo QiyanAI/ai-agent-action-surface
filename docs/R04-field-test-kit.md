@@ -27,12 +27,22 @@ never entered in the results tables.
 
 ## Consent (read aloud, keep the answer)
 
-> "This is an early-access test of Qiyan. I will write down what you do, what
-> you say and how long steps take — quoted in your own words, with your name
-> replaced by a letter if you prefer. The notes go into the project's test
-> record; they are not sold or used for anything else, and you can ask me to
-> delete them at any time. No account is needed and nothing you do is sent
-> anywhere by Qiyan. OK to start?"
+> "This is an early-access test of Qiyan, and it only starts with your
+> informed consent. Three things about privacy so you can decide:
+>
+> **One** — Qiyan has no cloud service: nothing you do is uploaded to any
+> Qiyan service, and no account is needed. **Two** — the built-in 60-second
+> demo is local and synthetic; it calls no external AI model at all.
+> **Three** — if we connect Claude Code and run a real task, its model calls
+> go to Anthropic under Anthropic's own network and data-handling terms;
+> that is the one channel where data reaches a third party, and it is Claude
+> Code's channel, not Qiyan's.
+>
+> I will also write down what you do, what you say and how long steps take —
+> quoted in your own words, with your name replaced by a letter if you
+> prefer. The notes go into the project's test record; they are not sold or
+> used for anything else, and you can ask me to delete them at any time.
+> OK to start?"
 
 Record: consent yes/no, anonymized yes/no.
 
@@ -40,7 +50,8 @@ Record: consent yes/no, anonymized yes/no.
 
 ## Test U02 — first 60 seconds (newcomer, no code knowledge needed)
 
-Vehicle: the console home + the synthetic demo. No account, nothing real runs.
+Vehicle: the console home + the synthetic demo. No account, nothing real
+runs, and no external AI model is called.
 
 | # | Ask / watch | Record |
 | --- | --- | --- |
@@ -117,9 +128,11 @@ Qiyan authors running their own reference host (the task book forbids it).
 > for one developer with no part in the project to integrate a small host
 > against the public contract — register an agent, run one allowed action, one
 > denied action, one approval, and see what happens when the service is down.
-> About 1–2 hours, using only `docs/developer-api.md` (revision 3). Nothing
-> leaves your machine; you get a checksummed, provenance-attested binary and
-> keep all the notes. Results are reported as [your own words], and stay "NOT
+> About 1–2 hours, using only `docs/developer-api.md` (revision 3). Qiyan
+> itself has no cloud service — the whole test runs on your machine — and if
+> you connect Claude Code for a real task, its model calls go to Anthropic
+> under Anthropic's own terms. You get a checksummed, provenance-attested
+> binary and keep all the notes. Results are reported as [your own words], and stay "NOT
 > VALIDATED" until a real outsider (you) completes them. Interested?
 
 ### 邀请文本（中文）
@@ -129,8 +142,10 @@ Qiyan authors running their own reference host (the task book forbids it).
 > Qiyan，并遵守 ALLOW / DENY / REQUIRE_APPROVAL 的裁决。现寻找一位与项目
 > 无关的开发者，依据公开契约做一个小接入——注册一个测试 Agent、完成一次
 > 允许操作、一次禁止操作、一次人工审批，并观察控制服务停止时会发生什么。
-> 约 1–2 小时，只使用 `docs/developer-api.md`（revision 3）。没有任何内容
-> 离开你的电脑；你会拿到带校验和与来源证明的二进制，记录全归你。结果以
+> 约 1–2 小时，只使用 `docs/developer-api.md`（revision 3）。Qiyan 自身没有
+> 云服务——整场测试都在你的机器上运行——如果你连接 Claude Code 执行真实任务，
+> 其模型调用会发往 Anthropic、适用其自身条款。你会拿到带校验和与来源证明的
+> 二进制，记录全归你。结果以
 > 你的原话如实记录，在真实的"外部人"完成之前保持 NOT VALIDATED。有兴趣吗？
 
 Handoff package: the chosen candidate set (binary + `SHA256SUMS` + label) plus
@@ -161,10 +176,16 @@ later, not chased.
 `gh attestation verify`）；U13 第 0 步只给测试者二进制和 README 的"获取构建"
 一节，不得口头帮忙；演示页作为 60 秒入口；秒表随时记录。
 
-**同意：** 按上文"Consent"朗读并记录同意与否、是否匿名。
+**同意（必须事先取得知情同意）：** 按上文"Consent"朗读并记录同意与否、是否
+匿名。其中文版本：**一**——Qiyan 没有云服务，你做的任何事都不会上传到任何
+Qiyan 服务，也无需账号；**二**——内置的 60 秒演示是本地合成的，完全不调用
+外部 AI 模型；**三**——如果连接 Claude Code 执行真实任务，其模型调用会发往
+Anthropic、适用 Anthropic 自身的网络与数据处理条款，这是数据到达第三方的
+唯一渠道，且属于 Claude Code 的渠道、不是 Qiyan 的。测试记录以你的原话引用
+（可选择匿名），只用于本项目测试记录，不作他用，你可随时要求删除。
 
 **U02（60 秒）：** 五个问题逐条记录原话；新增完成度记录（是否完成试玩、
-在第几步放弃、用时）。
+在第几步放弃、用时）。合成演示不调用任何外部 AI 模型。
 
 **U13（两名独立用户，含一名少代码经验者）：** 第 0 步自己启动并进入控制台
 （记录用时、对 token 文件做了什么）；第 1–3 步项目选择/连接/建任务；第 4 步
