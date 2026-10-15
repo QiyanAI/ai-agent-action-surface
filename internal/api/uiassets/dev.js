@@ -19,7 +19,7 @@ function renderEndpoints() {
   const area = document.getElementById("endpoints");
   clear(area);
   const table = el("table", {});
-  table.append(el("tr", {}, el("th", {}, "Method"), el("th", {}, "Path"), el("th", {}, "Purpose")));
+  table.append(el("tr", {}, el("th", {}, t("th_method")), el("th", {}, t("th_path")), el("th", {}, t("th_purpose"))));
   for (const [m, p, d] of ENDPOINTS) {
     table.append(el("tr", {},
       el("td", {}, el("span", { class: "badge" }, m)),
@@ -40,11 +40,11 @@ async function renderCoverage() {
   }
   const rows = data.coverage || [];
   if (rows.length === 0) {
-    area.append(el("p", { class: "muted" }, "No coverage has been verified on this machine yet — connect Claude Code (the wizard runs the live probe) and the rows will appear."));
+    area.append(el("p", { class: "muted" }, t("dev_coverage_empty")));
     return;
   }
   const table = el("table", {});
-  table.append(el("tr", {}, el("th", {}, "Path"), el("th", {}, "State"), el("th", {}, "Basis")));
+  table.append(el("tr", {}, el("th", {}, t("th_path")), el("th", {}, t("th_state")), el("th", {}, t("th_basis"))));
   for (const r of rows) {
     const cls = r.state === "ENFORCED" ? "ok" : r.state === "OBSERVED" ? "warn" : "bad";
     table.append(el("tr", {},

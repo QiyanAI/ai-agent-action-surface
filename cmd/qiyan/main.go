@@ -26,7 +26,7 @@ const programName = "qiyan"
 // repository: no tracked file ever contains the SHA of the commit that contains
 // it, which would be a self-referential hash.
 var (
-	version = "0.0.0-r01"
+	version = "0.2.0-r02"
 	commit  = "unknown"
 	built   = "unknown"
 )
