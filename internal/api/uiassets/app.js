@@ -53,7 +53,11 @@ async function ensureSession(mainEl) {
   if (k) {
     try {
       await bootstrapSession(k);
-      history.replaceState(null, "", location.pathname);
+      // Strip only the one-time key; deep-link parameters (?mission=, ?tour=)
+      // must survive the sign-in.
+      params.delete("k");
+      const qs = params.toString();
+      history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
     } catch (e) {
       renderBootstrap(mainEl, e.message);
       return false;

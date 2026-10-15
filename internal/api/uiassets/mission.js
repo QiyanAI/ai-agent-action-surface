@@ -166,6 +166,9 @@ async function refreshMission() {
   renderFleet();
   if (mstate === "COMPLETED" || mstate === "FAILED" || mstate === "CANCELLED") {
     showStopButton(false);
+    // A mission entered via deep link (no live page) still needs its decision
+    // trail before the outcome card can count anything.
+    if (!state.lastDecisions) await refreshMap();
     await renderSummary();
   }
   return true;
@@ -385,6 +388,10 @@ async function renderSummary() {
       card.append(el("p", { class: "muted" }, t("summary_duration") + ": " + secs + "s"));
     }
     if (run.summary) card.append(el("p", {}, run.summary));
+  } else if (state.lastDecisions && state.lastDecisions.length > 0) {
+    // Decisions exist (the mission really ran), but the in-memory run record
+    // is gone — say so instead of silently omitting the summary.
+    card.append(el("p", { class: "notice warn" }, t("run_lost_notice")));
   }
 
   // Files produced — recorded per task from allowed decisions.

@@ -268,14 +268,18 @@ func VerifyDenyRule(ctx context.Context, projectDir, claudeBin, rule string) (Ve
 }
 
 // sessionCompleted reports whether the verification session produced a
-// result that may be interpreted. A failed or empty run is indeterminate,
-// not evidence that the rule blocked anything.
+// result that may be interpreted. A failed run, an empty result, or a result
+// the runtime itself marked as an error (is_error:true — e.g. auth or model
+// failures) is indeterminate, not evidence that the rule blocked anything.
 func sessionCompleted(runErr error, text string) (bool, string) {
 	if runErr != nil {
 		return false, "the verification session failed: " + runErr.Error()
 	}
 	if strings.TrimSpace(text) == "" {
 		return false, "the verification session produced no result"
+	}
+	if strings.Contains(text, `"is_error":true`) {
+		return false, "the verification session reported an error result"
 	}
 	return true, ""
 }

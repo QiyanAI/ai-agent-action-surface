@@ -238,4 +238,12 @@ func TestVerificationSessionMustComplete(t *testing.T) {
 	} else if !strings.Contains(why, "no result") {
 		t.Fatalf("the reason must say there was no result: %q", why)
 	}
+	// A session that reports its own error (is_error:true) proves nothing
+	// about the rule, even with exit code 0.
+	errText := `{"type":"result","is_error":true,"result":"API Error"}`
+	if ok, why := sessionCompleted(nil, errText); ok {
+		t.Fatal("an error result must not be judged as blocked")
+	} else if !strings.Contains(why, "error result") {
+		t.Fatalf("the reason must say the session reported an error: %q", why)
+	}
 }

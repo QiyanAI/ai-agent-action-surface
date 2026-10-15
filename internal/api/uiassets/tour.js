@@ -122,7 +122,9 @@ const Tour = (() => {
     page = name;
     const params = new URLSearchParams(location.search);
     if (params.get("tour") === "1" && TOURS[page]) {
-      history.replaceState(null, "", location.pathname);
+      params.delete("tour");
+      const qs = params.toString();
+      history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
       run();
       return;
     }

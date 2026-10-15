@@ -86,7 +86,7 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
   const installs = await connectedInstallations();
   if (seq !== state.renderSeq) return;
   const recents = recentProjects();
-  const connectedPaths = new Set(installs.map((i) => (i.ProjectDir || "").toLowerCase()));
+  const connectedPaths = new Set(installs.map((i) => (i.projectDir || "").toLowerCase()));
 
   // Connected projects (server-side truth).
   if (installs.length > 0) {
@@ -94,10 +94,10 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
     for (const inst of installs) {
       const row = el("button", { type: "button", class: "picker-row" });
       row.append(
-        el("span", { class: "mono picker-path" }, inst.ProjectDir || ""),
-        el("span", { class: "badge " + (inst.Tier === "enforced" ? "ok" : "warn") }, tierLabel(inst.Tier)),
+        el("span", { class: "mono picker-path" }, inst.projectDir || ""),
+        el("span", { class: "badge " + (inst.tier === "enforced" ? "ok" : "warn") }, tierLabel(inst.tier)),
       );
-      row.addEventListener("click", () => selectProject(panel, inputEl, opts, inst.ProjectDir));
+      row.addEventListener("click", () => selectProject(panel, inputEl, opts, inst.projectDir));
       panel.append(row);
     }
   }

@@ -55,9 +55,10 @@ Usage:
   qiyan run --mission M               Run the mission's three-role fleet and follow it
 
 Flags:
-  -h, --help       Show this help text
-  -v, --version    Show version and build identity
-  --state-dir DIR  State directory (default: user config dir / QiyanAI / qiyan)
+  -h, --help       Show this help text (first argument only)
+  -v, --version    Show version and build identity (first argument only)
+  --state-dir DIR  Every operational command takes its own --state-dir
+                   (default: user config dir / QiyanAI / qiyan, or $QIYAN_STATE_DIR)
 
 Exit codes: 0 success, 1 error, 2 usage error or unrecognised command.
 For the hook entry point: exit 0 allows the action, exit 2 blocks it —
