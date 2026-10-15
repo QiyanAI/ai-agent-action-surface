@@ -240,32 +240,20 @@ func (e *Engine) gate(req Request, scope domain.Scope) (domain.Outcome, []domain
 		return domain.OutcomeRequireApproval, []domain.Reason{domain.NewReason(domain.ReasonDeleteOperation, "path", a.Path)}
 
 	case domain.ActionProcessExec:
-		class, program := ClassifyCommand(a.Command, a.Cwd)
-		if class == CmdSafe {
-			// Program-level safety is not enough: the arguments must not
-			// reach outside the authorized roots ("cat C:/elsewhere/secret"),
-			// or containment would exist for file tools and evaporate for
-			// shell ones. Unresolvable path arguments stay behind approval.
-			if outside, unverifiable := AnalyzeSafeCommandPaths(a.Command, a.Cwd, scope.Roots); outside != "" {
-				return domain.OutcomeDeny, []domain.Reason{
-					domain.NewReason(domain.ReasonPathOutsideScope, "path", outside, "program", program)}
-			} else if unverifiable {
-				return domain.OutcomeRequireApproval, []domain.Reason{
-					domain.NewReason(domain.ReasonUnrecognizedCommand, "program", program)}
-			}
-		}
-		if class == CmdSafe && mode == domain.ModeCompanion {
-			// Companion mode: running any program waits for the user, even a
-			// curated read-only one. This is a concrete policy condition that
-			// distinguishes the modes; a more autonomous mode never weakens a
-			// gate, it only skips this ask.
-			return domain.OutcomeRequireApproval, []domain.Reason{
-				domain.NewReason(domain.ReasonModeCompanion, "kind", string(a.Kind), "program", program)}
-		}
-		if class == CmdSafe {
-			return domain.OutcomeAllow, nil
-		}
-		return domain.OutcomeRequireApproval, CommandReasons(class, program)
+		// Shell commands always wait for you. There is deliberately no
+		// name-based auto-allow left: successive reviews showed that even
+		// commands whose recognized usage prints (file --compile writes
+		// magic files; git consults fsmonitor config; go consults GOFLAGS and
+		// can fetch a toolchain) have side-effect modes that no pure string
+		// classifier can rule out. Without a real isolation guarantee for
+		// generic shell execution, the honest default is the user's approval
+		// for every shell command; native semantic tools (Read, Glob, Grep,
+		// session bookkeeping) keep their own, independently enforced rules.
+		// The command never runs by default — silence, denial or a missed
+		// decision all leave it unexecuted.
+		program := ExtractProgram(a.Command)
+		return domain.OutcomeRequireApproval, []domain.Reason{
+			domain.NewReason(domain.ReasonSensitiveCommand, "program", program, "command", a.Command)}
 
 	case domain.ActionNetwork:
 		return domain.OutcomeRequireApproval, []domain.Reason{domain.NewReason(domain.ReasonExternalNetwork, "target", a.URL)}

@@ -1,9 +1,6 @@
 package control
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -111,29 +108,6 @@ func TestWriteAllowedInControlledAuto(t *testing.T) {
 	f := newFixture(t, domain.ModeControlledAuto)
 	if got := f.eval(t, write("C:/proj/src/a.go")).Outcome; got != domain.OutcomeAllow {
 		t.Fatalf("in-scope write should allow in controlled-auto, got %s", got)
-	}
-}
-
-func TestSafeCommandAllowedInAutonomousModes(t *testing.T) {
-	// Print-only programs run without asking in the two autonomous modes; in
-	// companion mode even a print-only program waits for the user. Toolchains
-	// (go, git, npm) never do — they are config-redirectable (R02-SEC-01).
-	for _, mode := range []domain.AutonomyMode{domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
-		f := newFixture(t, mode)
-		for _, cmd := range []string{"ls -la", "cat notes.md", "head -5 notes.md", "grep TODO main.go", "uname -a", "diff a.txt b.txt"} {
-			if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
-				t.Errorf("mode %s: %q should be allowed, got %s", mode, cmd, got)
-			}
-		}
-	}
-}
-
-func TestCompanionGatesEvenReadOnlyPrograms(t *testing.T) {
-	f := newFixture(t, domain.ModeCompanion)
-	for _, cmd := range []string{"go test ./...", "git status", "ls -la"} {
-		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeRequireApproval {
-			t.Errorf("companion mode: %q must wait for the user, got %s", cmd, got)
-		}
 	}
 }
 
@@ -504,107 +478,6 @@ func TestAuditFailureDeniesTheAction(t *testing.T) {
 
 // --- command classifier unit table ---
 
-func TestClassifyCommandTable(t *testing.T) {
-	cases := []struct {
-		cmd  string
-		want CommandClass
-	}{
-		{"ls -la", CmdSafe},
-		{"uname -a", CmdSafe},
-		{"head -5 notes.md", CmdSafe},
-		// R02-SEC-01 convergence: toolchains are never auto-allowed, because
-		// their behavior is redirectable by configuration Qiyan cannot verify
-		// (repository-local config is writable by the gated agent itself).
-		{"go build ./cmd/qiyan", CmdSensitive},
-		{"go vet ./...", CmdSensitive},
-		{"go list ./...", CmdSensitive},
-		{"go version", CmdSensitive},
-		{"npm --version", CmdSensitive},
-		{"node -v", CmdSensitive},
-		{"git status", CmdSensitive},
-		{"git rev-parse HEAD", CmdSensitive},
-		{"git shortlog -sn", CmdSensitive},
-		// The core.fsmonitor vector from the second review: git executes the
-		// configured hook from `git status`, with or without -c.
-		{"git -c core.fsmonitor=/tmp/hook status", CmdSensitive},
-		{"git --config-env=core.fsmonitor=FSMON status", CmdSensitive},
-		// R02-SEC-01: project-code execution and configuration persistence
-		// are never auto-allowed.
-		{"go test ./...", CmdSensitive},
-		{"go test", CmdSensitive},
-		{"go env", CmdSensitive},
-		{"go env -w GOFLAGS=-mod=mod", CmdSensitive},
-		{"go env -u GOPATH", CmdSensitive},
-		{"go vet -vettool=/tmp/evil ./...", CmdSensitive},
-		// System-state setters without a flag to screen (positional forms).
-		{"date", CmdUnrecognized},
-		{"date -s 12:00", CmdUnrecognized},
-		{"hostname", CmdUnrecognized},
-		{"hostname newname", CmdUnrecognized},
-		{"uname -a", CmdSafe},
-		// Output-redirecting flags demote even curated programs.
-		{"go build -o bin/x ./cmd/x", CmdSensitive},
-		{"go test -coverprofile=cover.out ./...", CmdSensitive},
-		{"sort -o out.txt in.txt", CmdSensitive},
-		{"uniq in.txt out.txt", CmdSensitive},
-		// A value-taking flag must not be read as the subcommand:
-		// `git -C log push` is `git push` from directory "log".
-		{"git -C log push", CmdSensitive},
-		// Content transformers remain covered by the same principle.
-		{"git log", CmdSensitive},
-		{"git diff --stat", CmdSensitive},
-		{"git show HEAD", CmdSensitive},
-		{"git blame main.go", CmdSensitive},
-		{"git push", CmdSensitive},
-		{"go run main.go", CmdSensitive},
-		{"rm -rf x", CmdSensitive},
-		{"cat a | grep b", CmdUnrecognized},
-		{"echo $(whoami)", CmdUnrecognized},
-		{"myscript.sh", CmdUnrecognized},
-		{"", CmdUnrecognized},
-		{"ls *.go", CmdUnrecognized}, // glob = shell expansion
-		// Path forms are never vouched for by base name: a planted
-		// ./cat.bat must not inherit cat's "safe" classification.
-		{"./cat.bat", CmdUnrecognized},
-		{"./ls", CmdUnrecognized},
-		{`C:\Windows\System32\cmd.exe /c dir`, CmdUnrecognized},
-		{"/usr/bin/ls", CmdUnrecognized},
-		{"../tools/go", CmdUnrecognized},
-	}
-	for _, c := range cases {
-		got, prog := ClassifyCommand(c.cmd, "C:/nonexistent-cwd-for-tests")
-		if got != c.want {
-			t.Errorf("ClassifyCommand(%q) = %s (prog %q), want %s", c.cmd, got, prog, c.want)
-		}
-	}
-}
-
-// TestWindowsCwdShadowingRegression locks in the fix for the confirmed R02
-// review finding: on Windows, `cat` resolves from the working directory first,
-// so a planted ./cat.bat must demote the command from "safe" to unrecognized.
-// On other platforms there is no cwd-first resolution and the check is not
-// applied, so the test asserts the platform-correct behaviour.
-func TestWindowsCwdShadowingRegression(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "cat.bat"), []byte("@echo off\nrm -rf /\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := ClassifyCommand("cat notes.txt", dir)
-	if runtime.GOOS == "windows" {
-		if got != CmdUnrecognized {
-			t.Fatalf("planted cat.bat must demote `cat` to unrecognized on Windows, got %s", got)
-		}
-	} else if got != CmdSafe {
-		t.Fatalf("non-Windows has no cwd-first resolution; `cat` stays safe, got %s", got)
-	}
-
-	// An empty cwd on Windows can never be verified as safe.
-	got, _ = ClassifyCommand("cat notes.txt", "")
-	if runtime.GOOS == "windows" && got != CmdUnrecognized {
-		t.Fatalf("bare command without a declared cwd must not classify as safe on Windows, got %s", got)
-	}
-}
-
 // Regression: an absent roster must not silently remove the identity check.
 func TestRosterRequiredAlways(t *testing.T) {
 	f := newFixture(t, domain.ModeControlledAuto)
@@ -673,93 +546,75 @@ func TestApprovalContentSwapDoesNotReuseGrant(t *testing.T) {
 	}
 }
 
-// Regression (adversarial review, confirmed): program-level safety must not
-// let a curated read-only program reach outside the authorized roots through
-// its arguments.
-func TestSafeCommandArgumentsStayInScope(t *testing.T) {
-	f := newFixture(t, domain.ModeControlledAuto)
+// --- R02-SEC-01 final boundary: no name-based auto-allow for shell ---
 
-	outside := f.eval(t, bash("cat C:/outside-note.txt"))
-	if outside.Outcome != domain.OutcomeDeny {
-		t.Fatalf("reading outside the roots via cat must deny, got %s", outside.Outcome)
+func TestShellCommandsAlwaysRequireApproval(t *testing.T) {
+	cmds := []string{
+		"file --compile -m qiyanmagic out.mgc", // final review's counterexample: writes a compiled magic file
+		"file -m qiyanmagic note.txt",
+		"ls -la",
+		"cat note.txt",
+		"grep TODO main.go",
+		"diff a.txt b.txt",
+		"git status",
+		"git -c core.fsmonitor=/tmp/hook status",
+		"git --config-env=core.fsmonitor=FSMON status",
+		"go test ./...",
+		"go build ./...",
+		"date -s 12:00",
+		"hostname newname",
+		"npm --version",
 	}
-	if outside.Reasons[0].Code != domain.ReasonPathOutsideScope {
-		t.Fatalf("reason should be path_outside_scope, got %v", outside.Reasons[0].Code)
-	}
-	if got := f.eval(t, bash("ls -la C:/outside-dir")).Outcome; got != domain.OutcomeDeny {
-		t.Fatalf("listing outside must deny, got %s", got)
-	}
-	// A toolchain command is no longer classified by argument at all: it goes
-	// to approval before any containment question is asked.
-	if got := f.eval(t, bash("go build ../outside")).Outcome; got != domain.OutcomeRequireApproval {
-		t.Fatalf("toolchain commands must require approval, got %s", got)
-	}
-
-	// In-scope forms stay allowed: bare names resolve inside the cwd.
-	for _, cmd := range []string{"cat note.txt", "cat sub/note.txt", "grep TODO main.go", "head -5 note.txt"} {
-		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
-			t.Errorf("%q should stay allowed, got %s", cmd, got)
+	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+		f := newFixture(t, mode)
+		for _, cmd := range cmds {
+			d := f.eval(t, bash(cmd))
+			if d.Outcome != domain.OutcomeRequireApproval {
+				t.Errorf("mode %s: shell command %q must require approval, got %s", mode, cmd, d.Outcome)
+				continue
+			}
+			if d.ApprovalID == "" {
+				t.Errorf("mode %s: %q asked for approval but recorded none", mode, cmd)
+			}
 		}
-	}
-
-	// A flag carrying an unresolvable path value cannot be vouched for.
-	if got := f.eval(t, bash("grep -f/outside/pats .")).Outcome; got != domain.OutcomeRequireApproval {
-		t.Fatalf("unresolvable path flag must require approval, got %s", got)
 	}
 }
 
-// Regression (R02-SEC-01): commands capable of executing project code or
-// persisting configuration must reach the approval gate in the autonomous
-// modes, while truly read-only operations keep flowing without friction.
-func TestSideEffectCommandsRequireApprovalInControlledAuto(t *testing.T) {
+func TestNativeSemanticToolsStayAutomatic(t *testing.T) {
+	for _, mode := range []domain.AutonomyMode{domain.ModeCompanion, domain.ModeControlledAuto, domain.ModeBoundedAutonomy} {
+		f := newFixture(t, mode)
+		f.mission.Policy.Scope.AllowedTools = append(f.mission.Policy.Scope.AllowedTools, "Glob", "Grep", "TodoWrite")
+		f.mission.Policy.Scope.AllowedKinds = append(f.mission.Policy.Scope.AllowedKinds, domain.ActionSessionLocal)
+		for _, tool := range []string{"Read", "Glob", "Grep"} {
+			a := domain.Action{Kind: domain.ActionFileRead, Tool: tool, Path: "C:/proj/src/main.go"}
+			if got := f.eval(t, a).Outcome; got != domain.OutcomeAllow {
+				t.Errorf("mode %s: native read tool %s inside scope must keep flowing, got %s", mode, tool, got)
+			}
+		}
+		if got := f.eval(t, domain.Action{Kind: domain.ActionSessionLocal, Tool: "TodoWrite"}).Outcome; got != domain.OutcomeAllow {
+			t.Errorf("mode %s: session bookkeeping must keep passing, got %s", mode, got)
+		}
+	}
+}
+
+func TestScopeDenialsStillApplyToReadsAndShell(t *testing.T) {
 	f := newFixture(t, domain.ModeControlledAuto)
-
-	sideEffecting := []string{
-		"go test ./...",
-		"go test",
-		"go build ./...",
-		"go list ./...",
-		"go env -w GOFLAGS=-mod=mod",
-		"go env -u GOPATH",
-		"go env",
-		"go vet -vettool=/tmp/tool ./...",
-		"date -s 12:00",
-		"hostname newname",
-		"git log",
-		"git diff",
-		"git show HEAD",
-		"git blame main.go",
-		"git status",
-		"git -c core.fsmonitor=/tmp/hook status",
-		"npm --version",
-		"node -v",
+	// Native read outside the roots: hard DENY (preserved through the rework).
+	d := f.eval(t, read("C:/elsewhere/secret.txt"))
+	if d.Outcome != domain.OutcomeDeny || d.Reasons[0].Code != domain.ReasonPathOutsideScope {
+		t.Fatalf("out-of-scope read must stay a hard DENY, got %s %v", d.Outcome, d.Reasons)
 	}
-	for _, cmd := range sideEffecting {
-		d := f.eval(t, bash(cmd))
-		if d.Outcome != domain.OutcomeRequireApproval {
-			t.Errorf("%q must require explicit approval, got %s", cmd, d.Outcome)
-			continue
-		}
-		if d.ApprovalID == "" {
-			t.Errorf("%q asked for approval but recorded none", cmd)
-		}
+	// A shell action whose kind is outside the mission scope: DENY, not ask.
+	f2 := newFixture(t, domain.ModeControlledAuto)
+	f2.mission.Policy.Scope.AllowedKinds = []domain.ActionKind{domain.ActionFileRead, domain.ActionFileModify, domain.ActionSessionLocal}
+	if got := f2.eval(t, bash("ls -la")).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("exec outside mission scope must DENY, got %s", got)
 	}
-
-	readOnly := []string{
-		"ls -la",
-		"cat notes.txt",
-		"head -5 notes.txt",
-		"wc -l notes.txt",
-		"grep TODO main.go",
-		"uname -a",
-		"pwd",
-		"diff a.txt b.txt",
-		"stat notes.txt",
-		"file notes.txt",
-	}
-	for _, cmd := range readOnly {
-		if got := f.eval(t, bash(cmd)).Outcome; got != domain.OutcomeAllow {
-			t.Errorf("%q is verified read-only and should keep flowing, got %s", cmd, got)
-		}
+	// A tool outside the allowlist: DENY.
+	f3 := newFixture(t, domain.ModeControlledAuto)
+	bogus := bash("ls")
+	bogus.Tool = "Mystery"
+	if got := f3.eval(t, bogus).Outcome; got != domain.OutcomeDeny {
+		t.Fatalf("tool outside the allowlist must DENY, got %s", got)
 	}
 }

@@ -53,8 +53,8 @@ var reasonTexts = map[string]localizedText{
 		zh: "无法可靠解释该命令或工具（{program}{kind}），未经你审查不会执行。",
 	},
 	"sensitive_command": {
-		en: "The command involves a powerful program ({program}), so it needs your approval each time.",
-		zh: "该命令涉及高风险程序（{program}），每次执行都需要你的批准。",
+		en: "Shell commands always wait for your approval ({program}).",
+		zh: "Shell 命令一律等待你的批准（{program}）。",
 	},
 	"mode_companion": {
 		en: "You are in accompany mode, where changes wait for your confirmation.",

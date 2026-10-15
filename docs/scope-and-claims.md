@@ -40,25 +40,26 @@ the actual machine and records the measured tier.
 - **No promise to control commands Qiyan cannot interpret.** Unrecognized
   commands, unrecognized tools, path-form programs and shell metacharacters go
   to approval (or denial) — never to a silent allow.
-- **Command containment is curated, not general — and it is not a sandbox.**
-  Auto-allow covers exactly one class: a small set of print-only tools (ls,
-  cat, head, grep, …) that read their own arguments and the files inside the
-  authorized roots, with their path arguments checked against those roots.
-  **Every toolchain or repo tool goes to your approval, whatever its
-  subcommand** — `git`, `go`, `npm`, `node` — because their behavior is
-  redirectable by configuration Qiyan cannot verify, and repository-local
-  configuration is writable by the very agent being gated: a repository's own
-  `.git/config` can set `core.fsmonitor`, which `git status` then executes;
-  textconv/`diff.external`/`GIT_EXTERNAL_DIFF` do the same for git's content
-  commands; `git -c key=value` and `--config-env` inject such keys inline;
-  the go toolchain consults `GOFLAGS`/`GOENV` and `GOTOOLCHAIN` can fetch and
-  run a different toolchain. `go test` runs your project's own test binaries;
-  `go env -w/-u` writes persistent configuration; `date -s` / positional
-  `date` and `hostname NAME` set system state. None of these are auto-allowed;
-  all of them wait for you. Beyond this classifier, the boundary is stated
-  honestly: a bare command name resolves through the session's PATH and
-  environment, which are the user's own trust domain — Qiyan verifies the
-  *classifier's* decisions, not the user's toolchain installation.
+- **Shell commands: there is no name-based auto-allow at all — every shell
+  command waits for your approval, and this is not a sandbox.** Successive
+  independent reviews of any "safe program" list kept producing same-class
+  counterexamples — `go test` runs project code, `go env -w/-u` persists
+  configuration, `git status` executes a configured `core.fsmonitor` hook,
+  `sort -o`/`uniq in out`/`date -s`/`hostname NAME` have write or state
+  modes, and `file --compile -m …` writes a compiled magic file — because
+  any program's behavior can be redirected by arguments, configuration or
+  environment that pure string inspection cannot verify, and repository-local
+  configuration is writable by the very agent being gated. So the mechanism
+  itself was removed: no name whitelist, no argument blacklist; a shell
+  action is never executed by default. **What does not change:** the native
+  semantic tools with defined meanings — Read, Glob, Grep and the session
+  bookkeeping tools — keep their own rules and keep auto-executing inside the
+  authorized scope, and out-of-scope access through them is still a hard
+  DENY; shell actions whose kind or tool is outside the mission scope are
+  likewise DENIED, not merely asked about. Beyond the classifier the boundary
+  is stated honestly: a shell command name resolves through the session's
+  PATH and environment, which are the user's own trust domain — Qiyan
+  verifies its gate's decisions, not the user's toolchain installation.
 - **MCP servers are never started or contacted.** The lab reads their
   configuration only.
 - **No network force-blocking.** Outbound tool actions are gated (approval),

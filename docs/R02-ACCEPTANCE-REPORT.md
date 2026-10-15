@@ -264,6 +264,48 @@ principle itself (commit `f7ffba4c`):
 NOT VALIDATED** — unchanged by this convergence; no UX claim and no
 architecture was altered.
 
+## 9c. R02-SEC-01 final close — the mechanism removed
+
+The final independent review reproduced one more same-class counterexample
+(`file --compile -m qiyanmagic` writes a compiled magic file while `file` sat
+on the auto-allow list). The owner's closing instruction was to stop
+extending name lists altogether, and the code now does exactly that:
+
+- **The name-based shell auto-allow mechanism is deleted, not patched.** The
+  classifier, its allow tables, its argument screens and the path-argument
+  analyzer are gone; `internal/control` retains only `ExtractProgram`, which
+  is presentation-only (it decides nothing). There is no new whitelist and
+  no new blacklist to bypass.
+- **Every shell command requires approval, in every mode.** The engine's
+  exec arm returns REQUIRE_APPROVAL with the exact command shown to the
+  user; nothing about shell execution is ever allowed by default.
+- **Nothing else moved.** The native semantic tools (Read, Glob, Grep — the
+  tool layer, mapped to file-read actions) keep auto-executing inside the
+  authorized scope; session bookkeeping keeps passing; every structural gate
+  (identity, tool/kind scope, budgets, delegation, cancellation) and every
+  hard DENY — including out-of-scope path containment for native reads —
+  is untouched. The product claims were reworded to say exactly this
+  (`docs/scope-and-claims`, EN/ZH, plus the hook/console approval strings).
+
+**Live evidence (same day, real hook channel, bound session, mode
+controlled_auto):**
+- **12/12 shell forms → REQUIRE_APPROVAL, each with a recorded approval** —
+  `file --compile -m qiyanmagic out.mgc`, `file -m qiyanmagic note.txt`,
+  `ls -la`, `cat note.txt`, `grep hello note.txt`, `git status`,
+  `git -c core.fsmonitor=… status`, `go test ./...`, `go build ./...`,
+  `go env -w GOFLAGS=-mod=mod`, `date -s 12:00`, `hostname newname`.
+- **4/4 native tools inside scope → ALLOW** — Read, Glob, Grep, TodoWrite.
+- **Preserved hard DENY** — Read of a file outside the authorized roots →
+  DENY `path_outside_scope` (and a shell action whose kind is outside the
+  mission scope is still DENY, asserted by tests).
+- Regression tests rewritten to these three directions (shell-always-approval
+  across all modes; native-tools-stay-automatic; scope denials preserved),
+  running on the three-OS CI.
+
+**U02 (human 60-second timing) and U13 (independent first-time users) remain
+NOT VALIDATED** — unchanged; this close alters no UX claim and no
+architecture beyond the removed mechanism itself.
+
 ## 10. Re-running the evidence
 
 ```sh
