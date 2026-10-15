@@ -27,6 +27,28 @@ import (
 
 const fsListLimit = 1000
 
+// fsNormalize canonicalizes a user-supplied path for filesystem use. Drive
+// roots keep their trailing slash: domain.NormalizePath would reduce "D:/" to
+// "D:", which on Windows names a per-drive working directory, not the root.
+func fsNormalize(p string) string {
+	q := domain.NormalizePath(p, "")
+	if len(q) == 2 && q[1] == ':' {
+		q += "/"
+	}
+	return q
+}
+
+// fsAbsolute reports whether the fsNormalize'd path is absolute. Drive roots
+// ("D:/") are the one form path.Clean shortens, so they are accepted here on
+// top of the domain check.
+func fsAbsolute(pNorm string) bool {
+	if len(pNorm) == 3 && pNorm[1] == ':' && pNorm[2] == '/' {
+		c := pNorm[0]
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+	}
+	return domain.IsAbsoluteNormalized(pNorm)
+}
+
 type fsEntry struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
@@ -65,7 +87,7 @@ func (s *Server) fsPlaces() []fsPlace {
 		for c := 'A'; c <= 'Z'; c++ {
 			root := string(c) + ":\\"
 			if fi, err := os.Stat(root); err == nil && fi.IsDir() {
-				places = append(places, fsPlace{Kind: "drive", Path: domain.NormalizePath(root, "")})
+				places = append(places, fsPlace{Kind: "drive", Path: string(c) + ":/"})
 			}
 		}
 	} else {
@@ -88,8 +110,8 @@ func (s *Server) refusedFSDir(pNorm string) bool {
 // refusals. It returns the resolved path (forward slashes) or "" after having
 // written the error response.
 func (s *Server) resolveDir(w http.ResponseWriter, raw string) string {
-	pNorm := domain.NormalizePath(raw, "")
-	if !domain.IsAbsoluteNormalized(pNorm) {
+	pNorm := fsNormalize(raw)
+	if !fsAbsolute(pNorm) {
 		writeError(w, http.StatusBadRequest, domain.ErrInvalidRequest, "path must be an absolute path")
 		return ""
 	}
@@ -107,7 +129,7 @@ func (s *Server) resolveDir(w http.ResponseWriter, raw string) string {
 		writeError(w, http.StatusBadRequest, domain.ErrInvalidRequest, "that path is not a folder")
 		return ""
 	}
-	rNorm := domain.NormalizePath(resolved, "")
+	rNorm := fsNormalize(resolved)
 	if s.refusedFSDir(rNorm) {
 		writeError(w, http.StatusForbidden, domain.ErrOutOfScope, "that folder is Qiyan's own state directory and cannot be browsed")
 		return ""
@@ -162,7 +184,7 @@ func (s *Server) handleFSList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp.Path = dirNorm
-	if parent := domain.NormalizePath(filepath.Dir(filepath.FromSlash(dirNorm)), ""); parent != dirNorm {
+	if parent := fsNormalize(filepath.Dir(filepath.FromSlash(dirNorm))); parent != dirNorm {
 		resp.Parent = parent
 	}
 	resp.Entries = entries
@@ -183,8 +205,8 @@ func (s *Server) handleFSMkdir(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	pNorm := domain.NormalizePath(req.Path, "")
-	if !domain.IsAbsoluteNormalized(pNorm) {
+	pNorm := fsNormalize(req.Path)
+	if !fsAbsolute(pNorm) {
 		writeError(w, http.StatusBadRequest, domain.ErrInvalidRequest, "path must be an absolute path")
 		return
 	}

@@ -4,10 +4,27 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/QiyanAI/ai-agent-action-surface/internal/domain"
 )
+
+func TestFSListDriveRoot(t *testing.T) {
+	// "D:/" must be listable as a drive root; path.Clean would shorten it to
+	// "D:" which names a per-drive working directory on Windows.
+	if runtime.GOOS != "windows" {
+		t.Skip("drive roots are a Windows concept")
+	}
+	f := newAPIFixture(t)
+	resp, body := f.do(t, "GET", "/v1/fs/list?path="+url.QueryEscape(`D:\`), f.opTok, nil, nil)
+	if resp.StatusCode != 200 {
+		t.Skipf("no D: drive on this machine: %d", resp.StatusCode)
+	}
+	if got := body["path"].(string); got != "D:/" {
+		t.Fatalf("drive root listed as %q, want D:/", got)
+	}
+}
 
 func TestFSListDirsOnlyAndAuth(t *testing.T) {
 	f := newAPIFixture(t)

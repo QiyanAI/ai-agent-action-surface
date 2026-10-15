@@ -164,9 +164,9 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
     }
     for (const p of state.places) {
       const row = el("button", { type: "button", class: "picker-row" });
-      row.append(el("span", { class: "picker-path mono" }, p.Kind === "drive" ? p.Path : t("picker_place_" + p.Kind) + " — " + p.Path));
+      row.append(el("span", { class: "picker-path mono" }, p.kind === "drive" ? p.path : t("picker_place_" + p.kind) + " — " + p.path));
       row.addEventListener("click", () => {
-        state.browse = p.Path;
+        state.browse = p.path;
         renderPickerPanel(panel, inputEl, opts, state);
       });
       browseSection.append(row);
@@ -196,7 +196,7 @@ async function renderPickerPanel(panel, inputEl, opts, state) {
         const row = el("button", { type: "button", class: "picker-row" });
         row.append(el("span", { class: "picker-path" }, "📁 " + e.name));
         row.addEventListener("click", () => {
-          state.browse = e.Path;
+          state.browse = e.path;
           renderPickerPanel(panel, inputEl, opts, state);
         });
         listBox.append(row);
