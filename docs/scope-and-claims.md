@@ -78,10 +78,13 @@ the actual machine and records the measured tier.
   and CLI are clients. If the service cannot be reached, protected actions are
   denied (fail closed), never allowed.
 
-## What is not released
+## Release status
 
-No version of this project has been published as a product release. The release
-drill remains a provenance-attested test artifact only.
+No stable, production-certified version of this project has been published. The
+one public version is an early-access Beta: **v0.3.0-beta.1**, which is listed
+on the Releases page as a GitHub prerelease once it is published. A Beta is a
+public, downloadable early test build, and explicitly not a stable release. The
+release drill remains a provenance-attested test artifact only.
 
 R03 early-access candidates (the `Candidate Build` workflow) are **TEST
 BUILDS**: bare, unsigned, CGO-free binaries. Each artifact set carries a

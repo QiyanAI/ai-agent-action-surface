@@ -8,19 +8,20 @@ from source: two commands, see the end.)
 > unsigned binary. It is early access — **not** a production security
 > certification — and carries no support or compatibility promise.
 >
-> **Where to get it.** The release is assembled and awaiting the maintainer's
-> authorization; once authorized, the five platform files attach to
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) with
-> `SHA256SUMS`, `LICENSE.txt` and the EARLY ACCESS/BETA label, and build
-> provenance is verifiable with `gh attestation verify`. Until the Beta is
-> live, invited testers receive current candidates through the dispatch-only
-> **Candidate Build** workflow (Actions → Candidate Build), and anyone can
-> build from source with Go 1.27+ (`go build -o qiyan ./cmd/qiyan`).
+> **Where to get it.** When the Release is listed on
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases), the
+> five platform files are there with `SHA256SUMS`, `LICENSE.txt` and the
+> EARLY ACCESS/BETA label, and build provenance is verifiable with
+> `gh attestation verify`. If it is not listed there yet, invited testers
+> receive current candidates through the dispatch-only **Candidate Build**
+> workflow (Actions → Candidate Build), and anyone can build from source with
+> Go 1.27+ (`go build -o qiyan ./cmd/qiyan`).
 
 ## The four steps
 
 1. **Download** the file for your system (windows/amd64, linux/amd64,
-   linux/arm64, darwin/amd64, darwin/arm64) from the Releases page.
+   linux/arm64, darwin/amd64, darwin/arm64) from the Releases page — or take
+   the fallback above if it is not listed there yet.
 2. **Unzip it into a folder you will keep** — for example `C:\Tools\qiyan` or
    `~/qiyan`. Do this *before* starting it or connecting any project. The
    service records the binary's absolute path, and **moving or deleting the
@@ -139,14 +140,14 @@ go build -o qiyan ./cmd/qiyan
 
 > **EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED（早期体验 / Beta /
 > 未经生产认证）。** v0.3.0-beta.1 是未签名的二进制，属于早期体验——**不是**
-> 生产级安全认证——不附带支持或兼容性承诺。发布已装配完成、等待维护者的
-> 授权；获授权后文件连同 `SHA256SUMS`、`LICENSE.txt` 与 EARLY ACCESS/BETA
-> 标记一起出现在
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)。
-> 在此之前：受邀测试者通过 Candidate Build 工作流获取当前候选包；任何人也可
-> 从源码构建（Go 1.27+）。
+> 生产级安全认证——不附带支持或兼容性承诺。当该版本出现在
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)
+> 页面上时，五个平台文件连同 `SHA256SUMS`、`LICENSE.txt` 与
+> EARLY ACCESS/BETA 标记都在那里。若该页面尚未列出，受邀测试者可通过
+> Candidate Build 工作流获取当前候选包；任何人也可从源码构建（Go 1.27+）。
 
-四个步骤：**下载**你系统的文件 → **解压到你会长期保留的文件夹**（例如
+四个步骤：**下载**你系统的文件（若 Releases 页面尚未列出，见上方替代方式）→
+**解压到你会长期保留的文件夹**（例如
 `C:\Tools\qiyan`；在启动或连接任何项目**之前**放好——服务会记录二进制的绝对
 路径，之后移动或删除它会让门禁按失败即拒绝工作，阻止已连接项目里的所有工具）
 → 运行 `./qiyan_0.3.0-beta.1_<os>_<arch> serve` → 打开横幅打印的控制台地址或

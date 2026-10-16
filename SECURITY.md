@@ -77,10 +77,16 @@ goodwill in both directions.
 
 ## Supported versions
 
-No version of this project has been released as a product. Early-access builds
-— the test candidates and the v0.3.0-beta.1 Public Beta once it ships — are
-signalled `EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED` (test
-candidates) and `EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED` (the Beta):
-they are not production certified, carry no support or compatibility promise,
-and there is no supported-version patch policy yet. Reports are nonetheless
-welcome — the feedback is most useful at this stage.
+No stable, production-certified release exists, and none of this is a support
+commitment. The project has one public version: **v0.3.0-beta.1**, a Public
+Beta listed on
+[Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) once
+it is published.
+
+Early-access builds are signalled `EARLY ACCESS / BETA /
+NOT PRODUCTION-CERTIFIED` (that Beta, and any later early-access build
+published there) and `EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED`
+(test candidates — assembled for invited testers, never published as a product
+version). None of them is production certified, none carries a support or
+compatibility promise, and there is no supported-version patch policy yet.
+Reports are nonetheless welcome — the feedback is most useful at this stage.
