@@ -91,11 +91,23 @@ real observation.
 > report channel travel with the release and in
 > [docs/scope-and-claims.md](docs/scope-and-claims.md).
 
-Once you have the file, verify and run:
+Once you have the file, verify and run. Download `SHA256SUMS` from the same
+Release page and keep it **beside** the binary — the commands below need both
+files in one folder. `SHA256SUMS` covers all five platforms, so check the file
+you actually downloaded: `--ignore-missing` skips the files you do not have, and
+still **fails** on a mismatch:
 
 ```sh
-sha256sum -c SHA256SUMS        # every line must say OK (Git Bash/WSL; on stock Windows use Get-FileHash below)
+# Linux
+sha256sum -c --ignore-missing SHA256SUMS       # your file's line must print OK
+
+# macOS (ships shasum, not sha256sum)
+shasum -a 256 -c --ignore-missing SHA256SUMS   # your file's line must print OK
+
 gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
+
+# Linux/macOS: a downloaded file is not executable yet
+chmod +x ./qiyan_0.3.0-beta.1_<os>_<arch>
 ./qiyan_0.3.0-beta.1_<os>_<arch> serve
 # prints the console address, a sign-in link, the state dir and token paths
 ```
@@ -104,7 +116,9 @@ On stock Windows (PowerShell), where `sha256sum` and `gh` are not built in:
 
 ```powershell
 Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
-# compare the hash against the matching line in SHA256SUMS
+# compare case-insensitively: it must equal the matching line in SHA256SUMS
+
+.\qiyan_0.3.0-beta.1_windows_amd64.exe serve
 ```
 
 Open the printed console address (or the sign-in link) and start with the
