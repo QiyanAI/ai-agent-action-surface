@@ -187,7 +187,7 @@ Required by R04-09 in any copy used publicly; keep this block together:
 - 集成未覆盖的路径**不宣称受到保护**——覆盖表如实说明哪些真正被强制执行。
 - **Beta 不是生产级安全认证。**
 
-## 8. Release-day checklist (maintainer actions; Claude Code does not do these)
+## 8. Release-day checklist (maintainer actions — or the agent, only under a named authorization)
 
 Order matters: the tag comes **before** the build, because the beta flavor
 refuses to run outside a `refs/tags/v<version>` checkout — that machine check
