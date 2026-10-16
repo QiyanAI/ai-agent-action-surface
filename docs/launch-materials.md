@@ -1,8 +1,9 @@
 # R04 launch materials (Public Beta v0.3.0-beta.1)
 
-**Status: prepared, not published.** Nothing in this repository posts itself
-anywhere. External posting happens only when the maintainer — a human — does
-it, under that community's own rules. These are drafts for that use.
+**Status: for the maintainer to publish; nothing here posts itself.** The §6
+notes are the drafting source for the GitHub Release body. Posting to any other
+channel happens only when the maintainer — a human — does it, under that
+community's own rules. These are drafts for that use.
 
 Everything below follows the claim boundary in
 [scope-and-claims.md](scope-and-claims.md); if any phrasing here ever
@@ -114,7 +115,7 @@ commands and what you will see — live in [demos.md](demos.md):
 
 演示的可复现步骤（真实运行、真实记录）见 [demos.md](demos.md)。
 
-## 6. GitHub Release notes (draft for the maintainer to attach)
+## 6. GitHub Release notes (source for the Release body; the maintainer attaches them)
 
 > **Qiyan v0.3.0-beta.1 — Early Access / Beta / NOT PRODUCTION-CERTIFIED**
 >
@@ -186,7 +187,7 @@ Required by R04-09 in any copy used publicly; keep this block together:
 - 集成未覆盖的路径**不宣称受到保护**——覆盖表如实说明哪些真正被强制执行。
 - **Beta 不是生产级安全认证。**
 
-## 8. Release-day checklist (maintainer actions; Claude Code does not do these)
+## 8. Release-day checklist (maintainer actions — or the agent, only under a named authorization)
 
 Order matters: the tag comes **before** the build, because the beta flavor
 refuses to run outside a `refs/tags/v<version>` checkout — that machine check
@@ -203,40 +204,43 @@ publishes nothing by itself.
 4. Verify: `sha256sum -c SHA256SUMS` (or Windows `Get-FileHash` per file),
    `gh attestation verify` (each binary), run the Windows binary once
    (`serve` + console + demo) — record the outputs for the readiness record.
-5. Create the Release (`--prerelease`) with the five binaries + `SHA256SUMS` +
-   `LICENSE.txt` + `CANDIDATE-LABEL.txt` (8 files), pasting the §6 notes with
-   the commit/tag line and the platform-scope line filled from the run:
+5. Create the Release as a **draft prerelease**, with the five binaries +
+   `SHA256SUMS` + `LICENSE.txt` + `CANDIDATE-LABEL.txt` (8 files) from a
+   directory that holds exactly those files, and the notes with the commit/tag
+   and platform-scope lines filled from the run. `--draft` is deliberate: the
+   tag, the eight assets and the checksums are re-checked from the draft
+   before anything is public. `--verify-tag` refuses to create a second tag,
+   and `--latest=false` keeps a prerelease out of the "Latest" slot:
 
    ```sh
-   gh release create v0.3.0-beta.1 --repo QiyanAI/ai-agent-action-surface      --prerelease --target <the tag's SHA>      --title "Qiyan v0.3.0-beta.1 - Early Access / Beta"      --notes-file <filled-in notes> <the 8 files>
+   gh release create v0.3.0-beta.1 release-assets/* \
+     --repo QiyanAI/ai-agent-action-surface \
+     --verify-tag --draft --prerelease --latest=false \
+     --title "Qiyan v0.3.0-beta.1 — Public Beta" \
+     --notes-file release-notes.md
    ```
-6. **Then** apply the README swap below (docs/install.md needs the same swap
-   in its blockquote and its "Where to get it" sentence). The swap is a
-   follow-up PR because main is protected — that is expected and fine.
+6. **Publish the draft** once step 5's checks pass:
+
+   ```sh
+   gh release edit v0.3.0-beta.1 \
+     --repo QiyanAI/ai-agent-action-surface \
+     --draft=false --prerelease
+   ```
 
 R03 test-build artifacts (the `r03-candidate-*` sets) expire in the artifact
 store and are **never** part of the Release; only the freshly built,
 tag-bound `beta-candidate-*` set goes up.
 
-### README release-day swap
+### No release-day doc swap any more — superseded
 
-Replace, in `README.md` (and the parallel spot in `README.zh-CN.md`):
-
-> "the **v0.3.0-beta.1 Public Beta** … is assembled and awaiting the
-> maintainer's release authorization; once authorized, the files appear on
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)."
-
-with:
-
-> "**Download v0.3.0-beta.1** for your platform (windows/amd64, linux/amd64,
-> linux/arm64, darwin/amd64, darwin/arm64) from
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) —
-> checksums, the Apache-2.0 license and build provenance are attached."
-
-(中文对应段落同步替换为「**下载 v0.3.0-beta.1**（五个平台，附校验和、Apache-2.0
-许可与构建来源证明）：[Releases](…)。」) And delete the "awaiting … release
-authorization" clause in the `### Get the build` blockquote and in
-`docs/install.md`, replacing it with "**Download from Releases:** …".
+An earlier revision of this checklist had the maintainer open a follow-up PR
+*after* publication to swap the README's release-state paragraph (and its
+Chinese twin) from "awaiting the maintainer's authorization" to "download
+from Releases". That is no longer needed and must not be done: the wording in
+`README.md`, `README.zh-CN.md` and `docs/install.md` now carries both states
+itself — "**when the Release is listed on [Releases] …**" for the published
+case, "**if it is not listed there yet …**" for the window before it appears —
+in English and Chinese alike. Swapping that text now would break it.
 
 ## 9. Contribution and license entry (every channel)
 

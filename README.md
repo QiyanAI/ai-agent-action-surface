@@ -17,13 +17,12 @@ Everything is local-first: no account, no cloud, no telemetry — Qiyan sends
 nothing to any Qiyan service. English and 中文 are both first-class.
 
 **Try it now:** the **v0.3.0-beta.1 Public Beta** — five platforms, each built
-from a tagged commit with checksums and build provenance — is assembled and
-awaiting the maintainer's release authorization; once authorized, the files
-appear on [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases).
-No account is needed, and a 60-second demo ships inside. Until the Beta is
-live: build from source in two commands, or ask the maintainer for an
-early-access candidate — either way you are one step from the demo. Full
-steps: [Try it](#try-it).
+from a tagged commit with checksums and build provenance. Get it from
+[Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases) as a
+GitHub prerelease; if it is not listed there yet, build from source in two
+commands or ask the maintainer for an early-access candidate. Either way you
+are one step from the 60-second demo, and no account is needed. Full steps:
+[Try it](#try-it).
 
 ![The console home: service status, four entries, and the no-account demo](docs/images/console-home.png)
 
@@ -71,16 +70,15 @@ real observation.
 > unsigned, CGO-free binary for linux/amd64, linux/arm64, darwin/amd64,
 > darwin/arm64 and windows/amd64. It is early access — **not** a production
 > security certification — and carries no support or compatibility promise.
-> The release is assembled and awaiting the maintainer's authorization; once
-> authorized, each file attaches to
-> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases)
-> together with `SHA256SUMS`, `LICENSE.txt` and the EARLY ACCESS/BETA label —
-> five binaries plus those three files — and build provenance is verifiable on
-> every binary with `gh attestation verify` (an attestation in the repository
-> store, not an attached signature). Until the Beta is live, invited testers
-> receive current candidates through the dispatch-only **Candidate Build**
-> workflow (Actions → Candidate Build), and anyone can build from source
-> below.
+> **Download:** when the Release is listed on
+> [Releases](https://github.com/QiyanAI/ai-agent-action-surface/releases), the
+> five platform files are there with `SHA256SUMS`, `LICENSE.txt` and the
+> EARLY ACCESS/BETA label — five binaries plus those three files — and build
+> provenance is verifiable on every binary with `gh attestation verify` (an
+> attestation in the repository store, not an attached signature). If it is
+> not listed there yet, invited testers receive current candidates through the
+> dispatch-only **Candidate Build** workflow (Actions → Candidate Build), and
+> anyone can build from source below.
 >
 > Windows SmartScreen and macOS Gatekeeper will warn on first run; there is no
 > signing — and do not disable those warnings for other software. **Keep the
@@ -93,7 +91,7 @@ real observation.
 > report channel travel with the release and in
 > [docs/scope-and-claims.md](docs/scope-and-claims.md).
 
-Download for your platform, then verify and run:
+Once you have the file, verify and run:
 
 ```sh
 sha256sum -c SHA256SUMS        # every line must say OK (Git Bash/WSL; on stock Windows use Get-FileHash below)

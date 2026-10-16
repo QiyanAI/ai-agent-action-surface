@@ -126,15 +126,17 @@ outside developer completes the R04-02 script in
 
 ## Captions and status used with these figures
 
-- Real runs: "Real run on this computer — v0.3.0-beta.1, measured tier:
-  enforced (Claude Code 2.1.300 or other probed version)". Substitute the
-  actual measured version/tier; never generalize one machine's probe into a
-  support claim.
+- Real runs: "Real run on this computer — <the build the run actually used>,
+  measured tier: enforced (Claude Code 2.1.300 or other probed version)".
+  State the build that was really run and the tier really measured; never
+  generalize one machine's probe into a support claim, and never caption a
+  rehearsal-build figure with a released version.
 - Synthetic: "The built-in 60-second demo — synthetic content, labelled DEMO
   in the console; nothing in it is a real run."
 
 _These walks were executed on 2026-10-16 with the R04 rehearsal build
 (`qiyan 0.3.0-r04-test`, three-role mission + reference host on Windows 11,
 Claude Code 2.1.301 measured `enforced`); the raw transcripts and decision
-exports go with the R04 acceptance record, and the release-day re-shoot swaps
-in the shipped `v0.3.0-beta.1` binary and its figures._
+exports go with the R04 acceptance record. A figure re-shot against a
+published release build is marked here with the exact released file and its
+`SHA256SUMS` line; an unmarked figure is from that 2026-10-16 rehearsal build._

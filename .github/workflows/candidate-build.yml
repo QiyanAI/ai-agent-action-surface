@@ -9,15 +9,21 @@ name: Candidate Build
 # time and is never written back into the tree).
 #
 # Two flavors:
-#   test — EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED (invited
-#          testers; the R03 channel, continued).
-#   beta — EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED (the artifact set
-#          the maintainer, and only the maintainer, may attach to a Release).
-#          Beta builds only run at the tag refs/tags/v<version_label>; the
-#          label records the tag, and the completeness gate re-checks it.
+#   test — EARLY ACCESS / TEST BUILD / NOT PRODUCTION-CERTIFIED. A test
+#          candidate built for invited testers (the R03 channel, continued).
+#          It has not been published as a public product version: it stays a
+#          workflow artifact and is never a Release.
+#   beta — EARLY ACCESS / BETA / NOT PRODUCTION-CERTIFIED. The public
+#          early-access Beta for one exact Git tag: an early test build
+#          released to the public as a GitHub prerelease, and explicitly NOT
+#          a stable, production-certified version. Beta builds only run at the
+#          tag refs/tags/v<version_label>; the label records the tag, and the
+#          completeness gate re-checks it.
 # The flavors are labels, not permissions: both produce artifacts only, and
 # neither can publish anything. Attaching a beta set to a GitHub Release is
-# the maintainer's action, done from the downloaded artifact.
+# the maintainer's action, done from the downloaded artifact. The label says
+# which of the two a set is, so a beta set never describes itself as "not a
+# release" after it has been released.
 #
 # Permissions mirror the release drill's build job exactly (contents: read +
 # id-token/attestations for provenance signing); no new permission type is
@@ -138,11 +144,30 @@ jobs:
             fi
             printf 'built:   %s on %s\n' "${built}" "${RUNNER_OS}"
             printf '%s\n' \
-              "This is an unsigned, CGO-free early-access build produced by the Candidate Build workflow." \
-              "It is not a product release, carries no support or compatibility promise," \
-              "and must stay at the path it is extracted to: installed Claude Code" \
-              "integrations point at the binary's absolute path, and moving or deleting" \
-              "it makes the gate fail closed." \
+              "This is an unsigned, CGO-free early-access build produced by the Candidate Build workflow."
+            # The flavor decides what this set is allowed to call itself. A
+            # beta set is attached to a public Release, so it must not claim to
+            # be "not a release"; a test set never becomes one, so it must not
+            # imply that it did. The status line above already carries the
+            # shared boundary (EARLY ACCESS / BETA vs TEST BUILD /
+            # NOT PRODUCTION-CERTIFIED); this paragraph names the class.
+            if [ "$flavor" = beta ]; then
+              printf '%s\n' \
+                "It is the public early-access Beta, published as a GitHub prerelease for" \
+                "the tag recorded above. It is an early test build — not a stable release," \
+                "and not a production security certification — and it carries no support" \
+                "or compatibility promise. Keep it at the path it is extracted to:" \
+                "installed Claude Code integrations point at the binary's absolute path," \
+                "and moving or deleting it makes the gate fail closed."
+            else
+              printf '%s\n' \
+                "It is a test candidate built for invited testers. It is not a product" \
+                "release and carries no support or compatibility promise. Keep it at the" \
+                "path it is extracted to: installed Claude Code integrations point at the" \
+                "binary's absolute path, and moving or deleting it makes the gate fail" \
+                "closed."
+            fi
+            printf '%s\n' \
               "Install, verify and uninstall: https://github.com/QiyanAI/ai-agent-action-surface/blob/main/docs/install.md" \
               "Known limitations: the release notes that accompany this set, when published." \
               "Security reports: https://github.com/QiyanAI/ai-agent-action-surface/security/advisories/new" \
