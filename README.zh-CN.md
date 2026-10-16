@@ -74,11 +74,22 @@ Qiyan 是一个本地优先的开放平台：用可验证的执行前控制运�
 > [docs/install.md](docs/install.md)。已知限制与安全报告入口随发布随附，
 > 也见 [docs/scope-and-claims.zh-CN.md](docs/scope-and-claims.zh-CN.md)。
 
-拿到文件后，校验并运行：
+拿到文件后，校验并运行。请从**同一个 Release 页面**下载 `SHA256SUMS`，与二进制
+放在**同一个文件夹**——下面的命令需要两个文件在一起。`SHA256SUMS` 记录的是五个
+平台的文件，所以只校验你实际下载的那一个即可——`--ignore-missing` 只是
+**跳过你没有的文件**，校验不符**依然会失败**：
 
 ```sh
-sha256sum -c SHA256SUMS        # 每一行都必须显示 OK（Git Bash/WSL；原生 Windows 用下方 Get-FileHash）
+# Linux
+sha256sum -c --ignore-missing SHA256SUMS       # 属于你这个文件的那一行必须显示 OK
+
+# macOS（自带 shasum，没有 sha256sum）
+shasum -a 256 -c --ignore-missing SHA256SUMS   # 属于你这个文件的那一行必须显示 OK
+
 gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-action-surface
+
+# Linux/macOS：刚下载的文件还没有执行权限
+chmod +x ./qiyan_0.3.0-beta.1_<os>_<arch>
 ./qiyan_0.3.0-beta.1_<os>_<arch> serve
 # 打印控制台地址、登录链接、状态目录与 token 文件路径
 ```
@@ -87,7 +98,9 @@ gh attestation verify qiyan_0.3.0-beta.1_<os>_<arch> --repo QiyanAI/ai-agent-act
 
 ```powershell
 Get-FileHash .\qiyan_0.3.0-beta.1_windows_amd64.exe -Algorithm SHA256
-# 将得到的哈希与 SHA256SUMS 中对应行比对
+# 与 SHA256SUMS 中对应行比较时忽略大小写（PowerShell 输出大写，文件里是小写）
+
+.\qiyan_0.3.0-beta.1_windows_amd64.exe serve
 ```
 
 打开打印出的控制台地址（或登录链接），从 60 秒演示开始——无需账号、无需
